@@ -4,11 +4,13 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node --test --test-concurrency=1 test/**/*.test.ts",
-    "migrate": "node scripts/migrate.ts",
-    "start": "node src/index.ts"
+    "test": "node --env-file=.env --test --test-concurrency=1 test/**/*.test.ts",
+    "migrate": "node --env-file=.env scripts/migrate.ts",
+    "start": "node --env-file=.env src/index.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1132.0",
+    "@aws-sdk/s3-request-presigner": "^3.1132.0",
     "@node-rs/argon2": "^2.2.1",
     "express": "^5.2.1",
     "pg": "^8.13.1"

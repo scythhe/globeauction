@@ -489,6 +489,23 @@ Limits: 40 photos per vehicle, 10 MB each, jpeg/png/webp only. Validate the
 content type when issuing the presigned URL, not after. These limits are
 enforced in the API — the schema only stores `url` and `sort_order` per photo.
 
+**Implemented.** Content type is checked before a URL is ever handed out —
+the presigned PUT is signed with that content type, so uploading with a
+different header fails the signature at the storage layer, not just a
+client-side check. The 10 MB limit can't be enforced by a presigned PUT
+directly (that needs presigned POST with policy conditions, which felt like
+more moving parts than one car a week justifies), so it's enforced at
+confirm time instead: `HeadObject` checks the actual uploaded size, and an
+oversized file gets deleted from storage and rejected rather than trusted.
+Same for content type — confirmed against what was actually stored, not
+just what the client claimed when requesting the URL.
+
+Uses the AWS SDK v3 (`@aws-sdk/client-s3` + `@aws-sdk/s3-request-presigner`)
+against whatever `S3_ENDPOINT`/`S3_ACCESS_KEY_ID`/etc. point to — real
+Cloudflare R2 in production, or a local MinIO stand-in for dev (`brew
+install minio`, or the `minio` service in `docker-compose.yml`). Same code
+either way; R2 speaks the S3 API.
+
 ---
 
 ## 12. API surface
@@ -502,12 +519,19 @@ POST   /auth/login
 GET    /auth/me
 ```
 
-**Vehicles** *(dealer — phase 2; in phase 1, team creates lots directly)*
+**Vehicles** (team-only writes in phase 1 — §3, no dealer submission flow yet)
 ```
-POST   /vehicles                    create draft
+POST   /vehicles                    team only — creates directly in 'approved'
+GET    /vehicles/:id                public
+POST   /vehicles/:id/photos         team only — get a presigned upload URL (§11)
+POST   /vehicles/:id/photos/confirm team only — confirm an upload, insert the vehicle_photos row
+GET    /vehicles/:id/photos         public — list a vehicle's photos
+DELETE /vehicles/:id/photos/:photoId  team only
+```
+
+**Vehicles** *(dealer — phase 2, not built)*
+```
 PATCH  /vehicles/:id                edit draft or rejected
-POST   /vehicles/:id/photos         get presigned upload URL
-DELETE /vehicles/:id/photos/:photoId
 POST   /vehicles/:id/submit         draft -> pending
 GET    /vehicles                    own vehicles
 GET    /vehicles/:id
@@ -626,7 +650,7 @@ don't build it now.
 | Post-sale settlement (§7 — manual, `reassign-sale`) | Done | 1 |
 | Background jobs | Done — open scheduled, close expired, expire seller decisions | 1 |
 | Notifications | Done — outbid, ending-soon, reserve-not-met. "Won" deliberately skipped (team contacts winners directly, §7); email transport is a `console.log` stub pending real SMTP/API credentials | 1 |
-| Photo uploads | Not started | 1 |
+| Photo uploads | Done — presigned S3-compatible uploads, real R2 credentials still needed for prod | 1 |
 | Search / home feed | Not started | later (single car/week doesn't need it) |
 | Frontend | Minimal build done — auth, browse, bid, team panel (`/web`) | 1 |
 
@@ -650,6 +674,26 @@ don't build it now.
 11. Photo uploads (§11).
 12. Frontend: browse/live-auction view, bid, minimal admin (create vehicle,
     create auction, enable bidding, reassign sale).
+
+### What's left to actually go live
+
+Every phase-1 line in the table above is done — this is now an operational
+punch list, not a code one:
+
+- **Real Cloudflare R2 credentials.** Photos work end-to-end against a local
+  MinIO stand-in; swapping in production R2 is an env var change
+  (`S3_ENDPOINT`/`S3_ACCESS_KEY_ID`/`S3_SECRET_ACCESS_KEY`/`S3_PUBLIC_BASE_URL`),
+  not a code change.
+- **Real email transport.** Notifications are correctly triggered and
+  deduplicated; they currently log to the console instead of sending,
+  because there's no SMTP relay or provider API key yet. One-file swap in
+  `api/src/notifications/mailer.ts` once that's decided.
+- **Deployment.** Nothing here has ever run anywhere but a local machine —
+  hosting, a domain, TLS, and a process manager (or equivalent) for keeping
+  the API and its background job loop alive are all still open.
+- **A GEL→USD rate source**, if the USD display line in §10 is wanted from
+  day one — right now `gel_rate` is only ever set if someone passes it in
+  by hand at auction creation.
 
 Search, home feed, dealer submission, approval queue, and counteroffers are
 all phase 2 — don't build them chasing "completeness" before the first
