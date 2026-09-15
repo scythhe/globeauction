@@ -1,0 +1,22 @@
+{
+  "name": "globeauction-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test --test-concurrency=1 test/**/*.test.ts",
+    "migrate": "node scripts/migrate.ts",
+    "start": "node src/index.ts"
+  },
+  "dependencies": {
+    "@node-rs/argon2": "^2.2.1",
+    "express": "^5.2.1",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.10.1",
+    "@types/pg": "^8.11.10",
+    "typescript": "^5.7.2"
+  }
+}
