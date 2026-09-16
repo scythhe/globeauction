@@ -49,6 +49,7 @@ async function request<T>(
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body ?? {}),
+  del: <T>(path: string) => request<T>("DELETE", path),
 };
 
 // ---------------------------------------------------------------
@@ -72,9 +73,12 @@ export interface Auction {
   current_price: string;
   reserve_price?: string; // present for team only
   reserveMet?: boolean; // present for everyone else
+  nextMinimumBid: string;
+  buy_now_price: string | null;
   high_bid_id: string | null;
   starts_at: string;
   ends_at: string;
+  soft_close_window: string;
   final_price: string | null;
   sold_to: string | null;
 }
@@ -85,10 +89,40 @@ export interface Vehicle {
   model: string;
   year: number;
   vin: string | null;
+  body_style: string | null;
   color: string | null;
+  engine_volume: string | null;
+  cylinders: number | null;
+  fuel_type: string | null;
+  transmission: string | null;
+  drive_type: string | null;
+  doors: string | null;
+  steering_side: string | null;
+  interior_color: string | null;
+  interior_material: string | null;
   mileage: number | null;
+  mileage_unit: string;
+  odometer_accurate: boolean | null;
+  customs_cleared: boolean;
+  tech_inspection: boolean | null;
+  catalytic_converter: boolean | null;
+  features: string[];
+  // Salvage-lot fields (§3.1) — null/"unknown" for phase-1 retail stock,
+  // meaningful once phase 2 lists damaged vehicles. Displayed only when set.
+  damage_primary: string | null;
+  damage_secondary: string | null;
+  run: string;
+  has_keys: boolean | null;
+  title: string;
   location: string | null;
   description: string | null;
+}
+
+export interface VehiclePhoto {
+  id: string;
+  vehicle_id: string;
+  url: string;
+  sort_order: number;
 }
 
 export interface Bid {

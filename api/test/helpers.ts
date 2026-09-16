@@ -101,6 +101,7 @@ export async function createAuction(
     startsAt: Date;
     endsAt: Date;
     softCloseWindow: string;
+    buyNowPrice: number | null;
   }> = {},
 ): Promise<AuctionFixture> {
   const startingPrice = overrides.startingPrice ?? 1000;
@@ -108,14 +109,15 @@ export async function createAuction(
   const startsAt = overrides.startsAt ?? new Date(Date.now() - 60_000);
   const endsAt = overrides.endsAt ?? new Date(Date.now() + 60 * 60_000);
   const softCloseWindow = overrides.softCloseWindow ?? "2 minutes";
+  const buyNowPrice = overrides.buyNowPrice ?? null;
 
   const { rows } = await client.query(
     `insert into auctions
        (vehicle_id, created_by, status, starting_price, reserve_price,
-        current_price, starts_at, ends_at, soft_close_window)
-     values ($1, $2, 'live', $3, $4, $3, $5, $6, $7::interval)
+        current_price, starts_at, ends_at, soft_close_window, buy_now_price)
+     values ($1, $2, 'live', $3, $4, $3, $5, $6, $7::interval, $8)
      returning id`,
-    [vehicleId, createdBy, startingPrice, reservePrice, startsAt, endsAt, softCloseWindow],
+    [vehicleId, createdBy, startingPrice, reservePrice, startsAt, endsAt, softCloseWindow, buyNowPrice],
   );
   return rows[0];
 }
@@ -170,6 +172,20 @@ export async function placeBid(
   const { rows } = await client.query(
     "select * from place_bid($1, $2, $3, $4, $5) as bid",
     [auctionId, bidderId, maxAmount, ipAddress, userAgent],
+  );
+  return rows[0];
+}
+
+export async function buyNow(
+  client: Client,
+  auctionId: string,
+  bidderId: string,
+  ipAddress: string | null = null,
+  userAgent: string | null = null,
+) {
+  const { rows } = await client.query(
+    "select * from buy_now($1, $2, $3, $4) as auction",
+    [auctionId, bidderId, ipAddress, userAgent],
   );
   return rows[0];
 }

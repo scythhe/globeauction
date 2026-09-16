@@ -149,6 +149,40 @@ describe("auctions.create", () => {
       },
     );
   });
+
+  test("accepts a buy-now price at or above the reserve", async () => {
+    const team = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, team.id, { status: "approved" });
+    const auction = await auctionsService.create(pool, actorFor(team.id), {
+      vehicleId: vehicle.id,
+      startingPrice: 1000,
+      reservePrice: 1000,
+      buyNowPrice: 3000,
+      startsAt: new Date(Date.now() - 1000).toISOString(),
+      endsAt: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    assert.equal((auction as { buy_now_price: string }).buy_now_price, "3000.00");
+  });
+
+  test("rejects a buy-now price below the reserve", async () => {
+    const team = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, team.id, { status: "approved" });
+    await assert.rejects(
+      () =>
+        auctionsService.create(pool, actorFor(team.id), {
+          vehicleId: vehicle.id,
+          startingPrice: 1000,
+          reservePrice: 2000,
+          buyNowPrice: 1500,
+          startsAt: new Date().toISOString(),
+          endsAt: new Date(Date.now() + 3_600_000).toISOString(),
+        }),
+      (err: unknown) => {
+        assert.equal((err as ApiError).code, "buy_now_below_reserve");
+        return true;
+      },
+    );
+  });
 });
 
 describe("auctions.getById / list — reserve price redaction (§6)", () => {
@@ -211,6 +245,90 @@ describe("auctions.getById / list — reserve price redaction (§6)", () => {
     for (const auction of results) {
       assert.ok(!("reserve_price" in auction));
     }
+  });
+
+  test("nextMinimumBid is present for every viewer and matches bid_increment()'s own rule", async () => {
+    const team = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id, { startingPrice: 1000 });
+
+    const asBuyer = await auctionsService.getById(pool, null, auction.id);
+    assert.equal((asBuyer as { nextMinimumBid: string }).nextMinimumBid, "1000.00");
+
+    await placeBid(client, auction.id, (await createUser(client)).id, 1200);
+    const after = await auctionsService.getById(pool, null, auction.id);
+    // current_price is now 1000 (starting), increment at 1000 is 100.
+    assert.equal((after as { nextMinimumBid: string }).nextMinimumBid, "1100.00");
+  });
+});
+
+describe("auctions.buyNow", () => {
+  test("happy path: closes the auction as sold", async () => {
+    const team = await createUser(client, { role: "team" });
+    const buyer = await createUser(client, { role: "buyer" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id, {
+      startingPrice: 1000,
+      buyNowPrice: 3000,
+    });
+
+    const result = await auctionsService.buyNow(pool, actorFor(buyer.id, "buyer"), auction.id);
+    assert.equal(result.status, "sold");
+    assert.equal(Number(result.final_price), 3000);
+    assert.equal(result.sold_to, buyer.id);
+  });
+
+  test("maps buy_now_not_available to a clean 400", async () => {
+    const team = await createUser(client, { role: "team" });
+    const buyer = await createUser(client, { role: "buyer" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id, { startingPrice: 1000 });
+
+    await assert.rejects(
+      () => auctionsService.buyNow(pool, actorFor(buyer.id, "buyer"), auction.id),
+      (err: unknown) => {
+        assert.ok(err instanceof ApiError);
+        assert.equal(err.status, 400);
+        assert.equal(err.code, "buy_now_not_available");
+        return true;
+      },
+    );
+  });
+
+  test("maps buy_now_already_bid to a clean 400 once a real bid exists", async () => {
+    const team = await createUser(client, { role: "team" });
+    const firstBidder = await createUser(client, { role: "buyer" });
+    const buyer = await createUser(client, { role: "buyer" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id, {
+      startingPrice: 1000,
+      buyNowPrice: 3000,
+    });
+    await placeBid(client, auction.id, firstBidder.id, 1200);
+
+    await assert.rejects(
+      () => auctionsService.buyNow(pool, actorFor(buyer.id, "buyer"), auction.id),
+      (err: unknown) => {
+        assert.equal((err as ApiError).code, "buy_now_already_bid");
+        return true;
+      },
+    );
+  });
+
+  test("requires authentication", async () => {
+    const team = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id, {
+      startingPrice: 1000,
+      buyNowPrice: 3000,
+    });
+    await assert.rejects(
+      () => auctionsService.buyNow(pool, null, auction.id),
+      (err: unknown) => {
+        assert.equal((err as ApiError).code, "unauthenticated");
+        return true;
+      },
+    );
   });
 });
 

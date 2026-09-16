@@ -56,7 +56,16 @@ export function useAuth(): AuthState {
 }
 
 export function errorMessage(err: unknown): string {
-  if (err instanceof ApiError) return err.code;
+  if (err instanceof ApiError) {
+    // The raw code alone ("rate_limited") reads as a mystery failure —
+    // this is exactly the kind of thing that shows up as "bidding feels
+    // unreliable" when two people are actually clicking quickly, not when
+    // anything is actually broken.
+    if (err.code === "rate_limited" && typeof err.extra.retryAfterSeconds === "number") {
+      return `Too many attempts — wait ${err.extra.retryAfterSeconds}s and try again.`;
+    }
+    return err.code;
+  }
   if (err instanceof Error) return err.message;
   return "something went wrong";
 }

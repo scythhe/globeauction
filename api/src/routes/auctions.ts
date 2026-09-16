@@ -62,6 +62,16 @@ export function auctionsRouter(pool: Pool): Router {
     res.status(201).json(bid);
   });
 
+  // Same per-user rate limit as ordinary bidding — no reason this path
+  // should be exempt from the same script-abuse protection.
+  router.post("/:id/buy-now", requireUuidParams("id"), bidRateLimiter(), async (req, res) => {
+    const auction = await auctionsService.buyNow(pool, req.actor, uuidParam(req, "id"), {
+      ipAddress: req.ip ?? null,
+      userAgent: req.header("user-agent") ?? null,
+    });
+    res.json(auction);
+  });
+
   router.post("/:id/accept", requireUuidParams("id"), async (req, res) => {
     const auction = await auctionsService.acceptAsIs(pool, req.actor, uuidParam(req, "id"));
     res.json(auction);

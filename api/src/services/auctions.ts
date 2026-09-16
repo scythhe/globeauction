@@ -4,6 +4,23 @@ import * as vehiclesRepo from "../repositories/vehicles.ts";
 import { ApiError, Errors } from "../errors.ts";
 import type { Actor } from "../types.ts";
 
+const KNOWN_BUY_NOW_ERRORS = new Set([
+  "auction_not_live",
+  "account_inactive",
+  "bidding_disabled",
+  "own_organization",
+  "buy_now_not_available",
+  "buy_now_already_bid",
+]);
+
+interface PgErrorLike {
+  message: string;
+}
+
+function isPgErrorLike(err: unknown): err is PgErrorLike {
+  return typeof err === "object" && err !== null && "message" in err;
+}
+
 function requireTeam(actor: Actor | null) {
   if (!actor) throw Errors.unauthenticated();
   if (actor.role !== "team") throw Errors.forbidden();
@@ -16,6 +33,7 @@ export interface CreateAuctionInput {
   startsAt: string;
   endsAt: string;
   gelRate?: number;
+  buyNowPrice?: number;
 }
 
 // §1: every phase 1 auction carries a reserve at least at the listing
@@ -47,6 +65,19 @@ export async function create(pool: Pool, actor: Actor | null, input: CreateAucti
     throw new ApiError(400, "reserve_below_starting_price");
   }
 
+  // Buy It Now — decided: must be >= reserve_price (the phase-1 rule that
+  // a car never sells for less than listing price applies whether the
+  // sale happens via auction or instant buy), mirrored here with a clean
+  // error rather than relying solely on auctions_buy_now_reserve.
+  if (input.buyNowPrice !== undefined) {
+    if (!Number.isFinite(input.buyNowPrice) || input.buyNowPrice <= 0) {
+      throw new ApiError(400, "invalid_price");
+    }
+    if (input.buyNowPrice < input.reservePrice) {
+      throw new ApiError(400, "buy_now_below_reserve");
+    }
+  }
+
   const startsAt = new Date(input.startsAt);
   const endsAt = new Date(input.endsAt);
   if (!(endsAt > startsAt)) {
@@ -61,32 +92,38 @@ export async function create(pool: Pool, actor: Actor | null, input: CreateAucti
     startsAt,
     endsAt,
     gelRate: input.gelRate?.toFixed(4),
+    buyNowPrice: input.buyNowPrice?.toFixed(2),
   });
 }
 
 // §6: "Not shown to bidders; the listing shows only whether the reserve
 // has been met." reserve_price itself must never reach a non-team caller —
 // this was leaking it verbatim until now.
-function toPublicAuction(auction: auctionsRepo.Auction) {
+//
+// nextMinimumBid is not sensitive (same as buy_now_price) — it's shown to
+// everyone so a "Quick Bid" button can display the exact number the bid
+// function itself would require, with zero risk of a client-side copy of
+// the increment table drifting out of sync.
+async function present(pool: Pool, auction: auctionsRepo.Auction, actor: Actor | null) {
+  const nextMinimumBid = await auctionsRepo.nextMinimumBid(pool, auction);
+  if (actor?.role === "team") {
+    return { ...auction, nextMinimumBid };
+  }
   const { reserve_price, ...rest } = auction;
   const reserveMet =
     reserve_price === null || Number(auction.current_price) >= Number(reserve_price);
-  return { ...rest, reserveMet };
-}
-
-function present(auction: auctionsRepo.Auction, actor: Actor | null) {
-  return actor?.role === "team" ? auction : toPublicAuction(auction);
+  return { ...rest, reserveMet, nextMinimumBid };
 }
 
 export async function getById(pool: Pool, actor: Actor | null, id: string) {
   const auction = await auctionsRepo.findById(pool, id);
   if (!auction) throw Errors.notFound("auction");
-  return present(auction, actor);
+  return present(pool, auction, actor);
 }
 
 export async function list(pool: Pool, actor: Actor | null, filters: auctionsRepo.ListFilters) {
   const auctions = await auctionsRepo.list(pool, filters);
-  return auctions.map((a) => present(a, actor));
+  return Promise.all(auctions.map((a) => present(pool, a, actor)));
 }
 
 // CLAUDE.md rule 3: max_amount / ip_address / user_agent are team-only.
@@ -135,4 +172,31 @@ export async function reassignSale(
     });
   }
   return auction;
+}
+
+// Buy It Now: a fixed price that closes the auction instantly. Disappears
+// after the first real bid (enforced in buy_now() itself); team and the
+// vehicle's own organization are blocked same as ordinary bidding.
+export async function buyNow(
+  pool: Pool,
+  actor: Actor | null,
+  auctionId: string,
+  requestMeta: { ipAddress?: string | null; userAgent?: string | null } = {},
+) {
+  if (!actor) throw Errors.unauthenticated();
+
+  try {
+    return await auctionsRepo.buyNow(
+      pool,
+      auctionId,
+      actor.id,
+      requestMeta.ipAddress ?? null,
+      requestMeta.userAgent ?? null,
+    );
+  } catch (err) {
+    if (isPgErrorLike(err) && KNOWN_BUY_NOW_ERRORS.has(err.message)) {
+      throw new ApiError(400, err.message);
+    }
+    throw err;
+  }
 }

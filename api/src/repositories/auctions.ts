@@ -27,6 +27,7 @@ export interface Auction {
   ends_at: Date;
   soft_close_window: string;
   seller_decision_by: Date | null;
+  buy_now_price: string | null;
 }
 
 export interface NewAuctionInput {
@@ -37,14 +38,15 @@ export interface NewAuctionInput {
   startsAt: Date;
   endsAt: Date;
   gelRate?: string;
+  buyNowPrice?: string;
 }
 
 export async function insert(pool: Pool, input: NewAuctionInput): Promise<Auction> {
   const { rows } = await pool.query<Auction>(
     `insert into auctions
        (vehicle_id, created_by, status, starting_price, reserve_price, current_price,
-        starts_at, ends_at, gel_rate)
-     values ($1, $2, 'scheduled', $3, $4, $3, $5, $6, $7)
+        starts_at, ends_at, gel_rate, buy_now_price)
+     values ($1, $2, 'scheduled', $3, $4, $3, $5, $6, $7, $8)
      returning *`,
     [
       input.vehicleId,
@@ -54,7 +56,36 @@ export async function insert(pool: Pool, input: NewAuctionInput): Promise<Auctio
       input.startsAt,
       input.endsAt,
       input.gelRate ?? null,
+      input.buyNowPrice ?? null,
     ],
+  );
+  return rows[0]!;
+}
+
+// §5.2's increment table, kept in SQL (bid_increment()) so the frontend's
+// "quick bid the minimum" button and place_bid()/buy_now() itself can never
+// drift out of sync with each other.
+export async function nextMinimumBid(pool: Pool, auction: Auction): Promise<string> {
+  if (!auction.high_bid_id) {
+    return auction.starting_price;
+  }
+  const { rows } = await pool.query<{ minimum: string }>(
+    "select (current_price + bid_increment(current_price))::text as minimum from auctions where id = $1",
+    [auction.id],
+  );
+  return rows[0]!.minimum;
+}
+
+export async function buyNow(
+  pool: Pool,
+  auctionId: string,
+  bidderId: string,
+  ipAddress: string | null,
+  userAgent: string | null,
+): Promise<Auction> {
+  const { rows } = await pool.query<Auction>(
+    "select * from buy_now($1, $2, $3, $4) as auction",
+    [auctionId, bidderId, ipAddress, userAgent],
   );
   return rows[0]!;
 }

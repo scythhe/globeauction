@@ -29,31 +29,47 @@ export function LoginPage({
   }
 
   return (
-    <form onSubmit={handleSubmit} className="auth-form">
-      <h2>Log in</h2>
-      <label>
-        Email
-        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-      </label>
-      <label>
-        Password
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-      </label>
-      {error && <p className="error">{error}</p>}
-      <button type="submit" disabled={submitting}>
-        {submitting ? "..." : "Log in"}
-      </button>
-      <p>
-        No account?{" "}
-        <button type="button" className="link" onClick={onSwitchToRegister}>
-          Register
+    <div className="mx-auto max-w-sm">
+      <form
+        onSubmit={handleSubmit}
+        className="rounded-lg border border-border bg-surface p-6 shadow-xl"
+      >
+        <h2 className="font-display mb-6 text-2xl font-bold tracking-wide">Log in</h2>
+        <label className="mb-4 block text-sm">
+          <span className="mb-1 block font-medium text-ink-muted">Email</span>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className="w-full rounded border border-border bg-bg px-3 py-2 text-ink outline-none focus:border-brand"
+          />
+        </label>
+        <label className="mb-4 block text-sm">
+          <span className="mb-1 block font-medium text-ink-muted">Password</span>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            className="w-full rounded border border-border bg-bg px-3 py-2 text-ink outline-none focus:border-brand"
+          />
+        </label>
+        {error && <p className="mb-4 text-sm text-brand">{error}</p>}
+        <button
+          type="submit"
+          disabled={submitting}
+          className="w-full rounded bg-brand py-2 font-semibold text-white shadow-[0_0_16px_-4px_var(--color-brand)] transition hover:bg-brand-hover disabled:opacity-50"
+        >
+          {submitting ? "…" : "Log in"}
         </button>
-      </p>
-    </form>
+        <p className="mt-4 text-center text-sm text-ink-muted">
+          No account?{" "}
+          <button type="button" className="font-medium text-brand hover:underline" onClick={onSwitchToRegister}>
+            Register
+          </button>
+        </p>
+      </form>
+    </div>
   );
 }

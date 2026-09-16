@@ -10,13 +10,26 @@ import { ApiError } from "./errors.ts";
 // Hand-rolled rather than pulling in the `cors` package — the frontend only
 // ever sends a Bearer token header, never cookies, so there's no credentials
 // mode to worry about and this is the entire surface we need.
-const DEV_ORIGIN = process.env.WEB_ORIGIN ?? "http://localhost:5173";
+//
+// localhost and 127.0.0.1 both accepted for the default dev port: they're
+// the same machine either way, and a request from one that got silently
+// CORS-blocked because a browser happened to be pointed at the other looks
+// exactly like "the whole app is broken" — every fetch fails with no useful
+// error, not just one feature. WEB_ORIGIN overrides this entirely for a
+// real deployment, where only one real origin should ever be allowed.
+const DEFAULT_DEV_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"];
+const ALLOWED_ORIGINS = process.env.WEB_ORIGIN
+  ? [process.env.WEB_ORIGIN]
+  : DEFAULT_DEV_ORIGINS;
 
 export function createApp(pool: Pool) {
   const app = express();
 
   app.use((req, res, next) => {
-    res.header("Access-Control-Allow-Origin", DEV_ORIGIN);
+    const origin = req.header("origin");
+    if (origin && ALLOWED_ORIGINS.includes(origin)) {
+      res.header("Access-Control-Allow-Origin", origin);
+    }
     res.header("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
     res.header("Access-Control-Allow-Headers", "Content-Type,Authorization");
     if (req.method === "OPTIONS") {
