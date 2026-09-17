@@ -169,6 +169,32 @@ describe("buy_now — validation", () => {
       (err: PgError) => err.message === "own_organization",
     );
   });
+
+  // Same bid_limit gap as place_bid() — buy_now() commits a bidder to
+  // buy_now_price just as firmly as a proxy bid commits them to max_amount,
+  // so it needs the same ceiling.
+  test("bid_limit_exceeded: buy_now_price above the bidder's bid_limit is rejected", async () => {
+    const { auction } = await auctionWithBuyNow(3000);
+    const buyer = await createUser(client, { bidLimit: 2000 });
+
+    await assert.rejects(
+      () => buyNow(client, auction.id, buyer.id),
+      (err: PgError) => {
+        assert.equal(err.message, "bid_limit_exceeded");
+        const detail = JSON.parse(err.detail!);
+        assert.equal(detail.bid_limit, 2000);
+        return true;
+      },
+    );
+  });
+
+  test("allows buy-now exactly at bid_limit", async () => {
+    const { auction } = await auctionWithBuyNow(3000);
+    const buyer = await createUser(client, { bidLimit: 3000 });
+
+    const result = await buyNow(client, auction.id, buyer.id);
+    assert.equal(result.status, "sold");
+  });
 });
 
 describe("buy_now — concurrency", () => {

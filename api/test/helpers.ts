@@ -51,6 +51,7 @@ export async function createUser(
     canBid: boolean;
     isActive: boolean;
     email: string;
+    bidLimit: number | null;
   }> = {},
 ): Promise<UserFixture> {
   const role = overrides.role ?? "buyer";
@@ -58,12 +59,13 @@ export async function createUser(
   const canBid = overrides.canBid ?? true;
   const isActive = overrides.isActive ?? true;
   const email = overrides.email ?? `user-${Math.random().toString(36).slice(2)}@example.com`;
+  const bidLimit = overrides.bidLimit === undefined ? null : overrides.bidLimit;
 
   const { rows } = await client.query(
-    `insert into users (email, password_hash, role, full_name, organization_id, can_bid, is_active)
-     values ($1, 'x', $2, 'Test User', $3, $4, $5)
+    `insert into users (email, password_hash, role, full_name, organization_id, can_bid, is_active, bid_limit)
+     values ($1, 'x', $2, 'Test User', $3, $4, $5, $6)
      returning id`,
-    [email, role, organizationId, canBid, isActive],
+    [email, role, organizationId, canBid, isActive, bidLimit],
   );
   return rows[0];
 }

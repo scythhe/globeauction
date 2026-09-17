@@ -37,3 +37,15 @@ export async function findValidByTokenHash(
   );
   return rows[0] ?? null;
 }
+
+// `revoked_at` existed on the schema and was checked on every read, but
+// nothing ever set it — sessions were only ever DB-backed for instant
+// revocability in name; "log out" was a client-side-only token discard,
+// so a leaked/stolen token stayed valid until its natural expiry no
+// matter what. This is what "instant revocability" actually requires.
+export async function revoke(pool: Pool, tokenHash: string): Promise<void> {
+  await pool.query(
+    "update sessions set revoked_at = now() where token_hash = $1 and revoked_at is null",
+    [tokenHash],
+  );
+}

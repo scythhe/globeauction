@@ -11,6 +11,7 @@ const KNOWN_BUY_NOW_ERRORS = new Set([
   "own_organization",
   "buy_now_not_available",
   "buy_now_already_bid",
+  "bid_limit_exceeded",
 ]);
 
 interface PgErrorLike {

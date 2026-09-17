@@ -6,7 +6,7 @@ interface AuthState {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, fullName: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -37,7 +37,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await login(email, password);
   }
 
-  function logout() {
+  async function logout() {
+    // Best-effort: the session is revoked server-side so a leaked token
+    // can't be replayed after logout, but a network hiccup here must
+    // still leave the user logged out locally — clear local state either way.
+    try {
+      await api.post("/auth/logout");
+    } catch {
+      // ignored — see above
+    }
     setToken(null);
     setUser(null);
   }

@@ -12,12 +12,21 @@ export interface OutbidCandidate {
   auction_id: string;
 }
 
+// is_proxy = true marks a system-generated row, not "this bidder was
+// outbid" — BACKEND_SPEC.md §5.3 Case D inserts the still-leading
+// bidder's own updated proxy row the same way Case C inserts the
+// genuinely-outbid old leader's. The two are told apart by whether the
+// row is the auction's *current* high bid: Case D's is, Case C's isn't.
+// Excluding `a.high_bid_id` is what keeps the still-winning bidder from
+// getting an "outbid" email every time someone bids under their ceiling.
 export async function findUnnotifiedOutbids(client: PoolClient): Promise<OutbidCandidate[]> {
   const { rows } = await client.query<OutbidCandidate>(
     `select b.id as bid_id, b.bidder_id, u.email, u.full_name, b.auction_id
        from bids b
        join users u on u.id = b.bidder_id
+       join auctions a on a.id = b.auction_id
       where b.is_proxy = true
+        and b.id is distinct from a.high_bid_id
         and not exists (
           select 1 from notification_log n
            where n.kind = 'outbid' and n.bid_id = b.id

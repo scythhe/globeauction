@@ -333,6 +333,76 @@ describe("place_bid — validation", () => {
     const result = await placeBid(client, auction.id, bidder.id, 1000);
     assert.ok(result.id);
   });
+
+  // BACKEND_SPEC.md §2.1: bid_limit "caps total exposure ... convention is
+  // deposit_amount × 10." Found by review, not a pentest: the column was
+  // computed on every deposit and shown in the admin UI, but neither
+  // place_bid() nor buy_now() ever read it — a 500₾ minimum deposit
+  // (bid_limit 5,000₾) placed no ceiling at all on what someone could bid.
+  test("bid_limit_exceeded: max_amount above the bidder's bid_limit is rejected", async () => {
+    const { auction } = await basicAuction(1000);
+    const bidder = await createUser(client, { bidLimit: 5000 });
+
+    await assert.rejects(
+      () => placeBid(client, auction.id, bidder.id, 5001),
+      (err: PgError) => {
+        assert.equal(err.message, "bid_limit_exceeded");
+        const detail = JSON.parse(err.detail!);
+        assert.equal(detail.bid_limit, 5000);
+        return true;
+      },
+    );
+
+    const bids = await listBids(client, auction.id);
+    assert.equal(bids.length, 0, "the rejected bid must not have been inserted");
+  });
+
+  test("a max_amount exactly at bid_limit is allowed", async () => {
+    const { auction } = await basicAuction(1000);
+    const bidder = await createUser(client, { bidLimit: 5000 });
+
+    const result = await placeBid(client, auction.id, bidder.id, 5000);
+    assert.ok(result.id);
+  });
+
+  test("bid_limit is null (never deposited) — no ceiling, other checks still apply", async () => {
+    const { auction } = await basicAuction(1000);
+    // can_bid defaults true in the fixture, mirroring an operator who
+    // manually enabled bidding without going through the deposit flow —
+    // bid_limit staying null shouldn't silently become "unlimited by bug",
+    // but it also isn't this function's job to require a deposit; that's
+    // the can_bid gate's job (already covered by the bidding_disabled tests).
+    const bidder = await createUser(client, { bidLimit: null });
+
+    const result = await placeBid(client, auction.id, bidder.id, 999_999);
+    assert.ok(result.id);
+  });
+
+  // Case B (raising your own ceiling) and Case C (taking the lead over
+  // someone else) both submit a fresh p_max_amount and must be capped the
+  // same way as a first bid — the limit isn't a one-time gate on Case A.
+  test("bid_limit_exceeded also applies when raising your own ceiling (case B)", async () => {
+    const { auction } = await basicAuction(1000);
+    const bidder = await createUser(client, { bidLimit: 5000 });
+    await placeBid(client, auction.id, bidder.id, 4000);
+
+    await assert.rejects(
+      () => placeBid(client, auction.id, bidder.id, 5001),
+      (err: PgError) => err.message === "bid_limit_exceeded",
+    );
+  });
+
+  test("bid_limit_exceeded also applies when taking the lead over another bidder (case C)", async () => {
+    const { auction } = await basicAuction(1000);
+    const leader = await createUser(client);
+    await placeBid(client, auction.id, leader.id, 4000);
+
+    const challenger = await createUser(client, { bidLimit: 5000 });
+    await assert.rejects(
+      () => placeBid(client, auction.id, challenger.id, 5001),
+      (err: PgError) => err.message === "bid_limit_exceeded",
+    );
+  });
 });
 
 describe("place_bid — soft close", () => {

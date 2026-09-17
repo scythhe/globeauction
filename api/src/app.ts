@@ -25,6 +25,20 @@ const ALLOWED_ORIGINS = process.env.WEB_ORIGIN
 export function createApp(pool: Pool) {
   const app = express();
 
+  // Without this, req.ip is the connecting socket's address — behind any
+  // reverse proxy (Cloudflare, nginx, a load balancer) that's the proxy's
+  // own IP for every request, collapsing every per-IP rate limiter
+  // (login, registration, bidding) into one shared bucket across all
+  // users. TRUST_PROXY is the number of trusted proxy hops in front of
+  // this process (set to the real count in prod — "1" for a single
+  // reverse proxy); unset/0 in local dev, where there is no proxy and
+  // trusting one would let a client spoof X-Forwarded-For to fake
+  // whatever IP it wants and dodge rate limiting entirely.
+  const trustProxyHops = Number(process.env.TRUST_PROXY ?? 0);
+  if (trustProxyHops > 0) {
+    app.set("trust proxy", trustProxyHops);
+  }
+
   app.use((req, res, next) => {
     const origin = req.header("origin");
     if (origin && ALLOWED_ORIGINS.includes(origin)) {

@@ -110,6 +110,40 @@ describe("outbid notifications", () => {
     );
   });
 
+  // Found by review, not a pentest: Case D (BACKEND_SPEC.md §5.3) inserts
+  // the still-leading bidder's own updated proxy row as is_proxy = true —
+  // same flag as Case C's genuinely-outbid proxy row. The old query
+  // selected every is_proxy = true row with no other filter, so the
+  // person who is still winning got a "you've been outbid" email every
+  // time someone bid under their ceiling.
+  test("does NOT notify the still-leading bidder when their own proxy row is updated (case D)", async () => {
+    const team = await createUser(client, { role: "team" });
+    const alice = await createUser(client, { email: "alice-leader@example.com", role: "buyer" });
+    const bob = await createUser(client, { email: "bob-loser@example.com", role: "buyer" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id, {
+      startingPrice: 1000,
+      endsAt: new Date(Date.now() + 3 * 60 * 60_000),
+    });
+
+    await placeBid(client, auction.id, alice.id, 5000); // alice takes the lead, max 5000
+    await placeBid(client, auction.id, bob.id, 1200); // case D: bob loses, alice's proxy row updates but she's still leading
+
+    const { mailer, sent } = recordingMailer();
+    await runNotificationSweep(pool, mailer);
+
+    assert.equal(
+      sent.filter((e) => e.to === "alice-leader@example.com").length,
+      0,
+      "alice is still winning — she must not get an outbid email",
+    );
+    assert.equal(
+      sent.filter((e) => e.to === "bob-loser@example.com").length,
+      0,
+      "bob's own bid isn't a proxy row, so no outbid event exists for him from this action",
+    );
+  });
+
   test("if the mailer throws, nothing is marked sent and the next sweep retries", async () => {
     const team = await createUser(client, { role: "team" });
     const alice = await createUser(client, { email: "alice4@example.com", role: "buyer" });

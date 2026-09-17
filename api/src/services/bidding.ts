@@ -9,6 +9,7 @@ const KNOWN_BID_ERRORS = new Set([
   "bidding_disabled",
   "own_organization",
   "bid_too_low",
+  "bid_limit_exceeded",
 ]);
 
 interface PgErrorLike {

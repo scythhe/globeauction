@@ -244,8 +244,12 @@ export interface ClosedAuction {
 }
 
 export async function closeExpiredAuctions(client: PoolClient): Promise<ClosedAuction[]> {
-  const { rows: candidates } = await client.query<Auction>(
-    `select * from auctions
+  // reserve_met computed in SQL (numeric >= numeric), not with Number() on
+  // the fetched strings — this decides whether a car legally sells, and
+  // hard rule #1 says money comparisons don't go through a JS float.
+  const { rows: candidates } = await client.query<Auction & { reserve_met: boolean }>(
+    `select *, (reserve_price is null or current_price >= reserve_price) as reserve_met
+       from auctions
       where status = 'live' and ends_at <= now()
       for update skip locked`,
   );
@@ -259,11 +263,7 @@ export async function closeExpiredAuctions(client: PoolClient): Promise<ClosedAu
       continue;
     }
 
-    const reserveMet =
-      auction.reserve_price === null ||
-      Number(auction.current_price) >= Number(auction.reserve_price);
-
-    if (reserveMet) {
+    if (auction.reserve_met) {
       await client.query(
         `update auctions
             set status = 'sold',

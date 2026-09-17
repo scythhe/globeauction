@@ -32,5 +32,15 @@ export function authRouter(pool: Pool): Router {
     res.json(user);
   });
 
+  // Same bearer-token extraction as attachActor — logout needs the raw
+  // token (to hash and match against the session), not req.actor, which
+  // only ever carries the resolved user.
+  router.post("/logout", async (req, res) => {
+    const header = req.header("authorization");
+    const token = header?.startsWith("Bearer ") ? header.slice("Bearer ".length) : null;
+    await authService.logout(pool, token);
+    res.status(204).end();
+  });
+
   return router;
 }

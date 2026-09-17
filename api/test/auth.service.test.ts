@@ -61,6 +61,60 @@ describe("auth.register", () => {
     );
   });
 
+  // A non-string password's `.length` is `undefined`, and `undefined < 8`
+  // is `false` — the length check silently passed and the bad value hit
+  // hashPassword(), crashing as an uncaught 500 instead of a clean 400.
+  test("rejects a non-string password with a clean 400, not a crash", async () => {
+    await assert.rejects(
+      () =>
+        authService.register(pool, {
+          email: "typeconfuse1@example.com",
+          // @ts-expect-error deliberately wrong type — this is what req.body can hold
+          password: 12345678,
+          fullName: "X",
+        }),
+      (err: unknown) => {
+        assert.ok(err instanceof ApiError);
+        assert.equal(err.status, 400);
+        return true;
+      },
+    );
+  });
+
+  test("rejects a non-string email with a clean 400", async () => {
+    await assert.rejects(
+      () =>
+        authService.register(pool, {
+          // @ts-expect-error deliberately wrong type
+          email: 12345,
+          password: "password123",
+          fullName: "X",
+        }),
+      (err: unknown) => {
+        assert.ok(err instanceof ApiError);
+        assert.equal(err.status, 400);
+        return true;
+      },
+    );
+  });
+
+  test("rejects a non-string fullName with a clean 400", async () => {
+    await assert.rejects(
+      () =>
+        authService.register(pool, {
+          email: "typeconfuse3@example.com",
+          password: "password123",
+          // @ts-expect-error deliberately wrong type
+          fullName: { first: "X" },
+        }),
+      (err: unknown) => {
+        assert.ok(err instanceof ApiError);
+        assert.equal(err.status, 400);
+        return true;
+      },
+    );
+  });
+
   // Mass-assignment regression: register only ever destructures known
   // fields into a hardcoded 'buyer' insert — confirmed live in a pentest
   // pass that an extra "role": "team" field in the request body is simply
@@ -127,6 +181,23 @@ describe("auth.login", () => {
     await assert.rejects(() => authService.login(pool, "unknown3@example.com", "x"));
   });
 
+  test("rejects a non-string password the same way as a wrong one (no distinguishable error)", async () => {
+    await authService.register(pool, {
+      email: "typeconfuse-login@example.com",
+      password: "correctpassword",
+      fullName: "Type Confuse",
+    });
+    await assert.rejects(
+      // @ts-expect-error deliberately wrong type — this is what req.body can hold
+      () => authService.login(pool, "typeconfuse-login@example.com", 12345678),
+      (err: unknown) => {
+        assert.ok(err instanceof ApiError);
+        assert.equal((err as ApiError).code, "invalid_credentials");
+        return true;
+      },
+    );
+  });
+
   test("rejects a deactivated account even with the correct password", async () => {
     await authService.register(pool, {
       email: "deactivated@example.com",
@@ -144,6 +215,65 @@ describe("auth.login", () => {
         return true;
       },
     );
+  });
+});
+
+// `revoked_at` existed on the schema and was checked on every session
+// lookup, but nothing ever set it — logging out only ever discarded the
+// token client-side, so a leaked token stayed valid until its natural
+// expiry regardless. Sessions are DB-backed specifically for instant
+// revocability; this is what actually delivers that.
+describe("auth.logout", () => {
+  test("revokes the session — the same token no longer resolves to an actor", async () => {
+    await authService.register(pool, {
+      email: "logout1@example.com",
+      password: "correctpassword",
+      fullName: "Logout Test",
+    });
+    const { token } = await authService.login(pool, "logout1@example.com", "correctpassword");
+
+    const beforeLogout = await authService.resolveActor(pool, token);
+    assert.ok(beforeLogout, "token must be valid before logout");
+
+    await authService.logout(pool, token);
+
+    const afterLogout = await authService.resolveActor(pool, token);
+    assert.equal(afterLogout, null, "token must be rejected immediately after logout");
+  });
+
+  test("does not affect a different session for the same user", async () => {
+    await authService.register(pool, {
+      email: "logout2@example.com",
+      password: "correctpassword",
+      fullName: "Logout Test 2",
+    });
+    const sessionA = await authService.login(pool, "logout2@example.com", "correctpassword");
+    const sessionB = await authService.login(pool, "logout2@example.com", "correctpassword");
+
+    await authService.logout(pool, sessionA.token);
+
+    assert.equal(await authService.resolveActor(pool, sessionA.token), null);
+    assert.ok(await authService.resolveActor(pool, sessionB.token), "session B must be untouched");
+  });
+
+  test("is idempotent — logging out twice does not throw", async () => {
+    await authService.register(pool, {
+      email: "logout3@example.com",
+      password: "correctpassword",
+      fullName: "Logout Test 3",
+    });
+    const { token } = await authService.login(pool, "logout3@example.com", "correctpassword");
+
+    await authService.logout(pool, token);
+    await authService.logout(pool, token); // must not throw
+  });
+
+  test("a null/missing token is a silent no-op", async () => {
+    await authService.logout(pool, null); // must not throw
+  });
+
+  test("an unrecognized token is a silent no-op, not an error (no info leak about token validity)", async () => {
+    await authService.logout(pool, "this-token-was-never-issued"); // must not throw
   });
 });
 
