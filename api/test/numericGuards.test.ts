@@ -91,6 +91,82 @@ describe("bidding.placeBid — max_amount validation", () => {
   });
 });
 
+// max_amount arrives over the wire as a string (the route no longer runs
+// it through Number()) — validated as a decimal string and passed to
+// Postgres numeric as-is, never round-tripped through a JS float.
+// CLAUDE.md hard rule #1: money is numeric, never a JS number.
+describe("bidding.placeBid — max_amount as a wire string", () => {
+  const badStrings = [
+    "NaN",
+    "Infinity",
+    "-Infinity",
+    "0",
+    "-500",
+    "1e10",
+    "12.345", // more than 2 decimal places
+    "1,500",
+    "",
+    "  ",
+    "abc",
+    "500 OR 1=1",
+  ];
+
+  for (const value of badStrings) {
+    test(`rejects max_amount=${JSON.stringify(value)} without touching the database`, async () => {
+      await assert.rejects(
+        () =>
+          biddingService.placeBid(
+            poisonedPool(),
+            buyer,
+            "33333333-3333-3333-3333-333333333333",
+            value,
+          ),
+        (err: unknown) => {
+          assert.ok(err instanceof ApiError);
+          assert.equal(err.status, 400);
+          return true;
+        },
+      );
+    });
+  }
+
+  test("rejects a non-string, non-number payload (object/array/undefined)", async () => {
+    for (const value of [{ amount: 500 }, [500], undefined, null]) {
+      await assert.rejects(
+        () =>
+          biddingService.placeBid(
+            poisonedPool(),
+            buyer,
+            "33333333-3333-3333-3333-333333333333",
+            value,
+          ),
+        (err: unknown) => {
+          assert.ok(err instanceof ApiError);
+          return true;
+        },
+      );
+    }
+  });
+
+  test("accepts a well-formed decimal string and passes it through unmodified", async () => {
+    let capturedAmount: unknown;
+    const capturingPool = {
+      query: (_sql: string, params: unknown[]) => {
+        capturedAmount = params[2];
+        return Promise.resolve({ rows: [{ id: "bid-1" }] });
+      },
+    } as unknown as Pool;
+
+    await biddingService.placeBid(
+      capturingPool,
+      buyer,
+      "33333333-3333-3333-3333-333333333333",
+      "12500.50",
+    );
+    assert.equal(capturedAmount, "12500.50", "must pass the exact string through, no float round-trip");
+  });
+});
+
 describe("admin.recordDeposit — amount validation", () => {
   const badAmounts = [NaN, Infinity, -Infinity, -1000, 499, 0];
 

@@ -209,6 +209,50 @@ describe("photos.confirmUpload — real round trip against local MinIO", () => {
       getS3Client().send(new HeadObjectCommand({ Bucket: getBucket(), Key: key })),
     );
   });
+
+  // Found by test, not a pentest: a plain count-then-insert lets two
+  // concurrent confirmUpload calls for the same vehicle both read a count
+  // under the cap and both insert, exceeding MAX_PHOTOS and/or colliding
+  // on sort_order. Sitting the vehicle at 39 photos and firing two
+  // confirms in parallel reproduces it deterministically.
+  test("two concurrent confirms at the 39-photo mark: exactly one succeeds, cap holds at 40", async () => {
+    const team = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, team.id);
+    for (let i = 0; i < 39; i++) {
+      await client.query(
+        "insert into vehicle_photos (vehicle_id, url, sort_order) values ($1, $2, $3)",
+        [vehicle.id, `http://example.com/${i}.jpg`, i],
+      );
+    }
+
+    const uploads = await Promise.all(
+      [0, 1].map(() =>
+        photosService.requestUpload(pool, actorFor(team.id), vehicle.id, "image/jpeg"),
+      ),
+    );
+    await Promise.all(uploads.map(({ uploadUrl }) => uploadTo(uploadUrl, JPEG_BYTES, "image/jpeg")));
+
+    const results = await Promise.allSettled(
+      uploads.map(({ key }) => photosService.confirmUpload(pool, actorFor(team.id), vehicle.id, key)),
+    );
+
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
+    const rejected = results.filter((r) => r.status === "rejected");
+    assert.equal(fulfilled.length, 1, "exactly one of the two concurrent confirms should succeed");
+    assert.equal(rejected.length, 1);
+    assert.equal(
+      ((rejected[0] as PromiseRejectedResult).reason as ApiError).code,
+      "photo_limit_reached",
+    );
+
+    const list = await photosService.listPhotos(pool, vehicle.id);
+    assert.equal(list.length, 40, "cap must hold at exactly 40, not 41");
+    assert.equal(
+      new Set(list.map((p) => p.sort_order)).size,
+      40,
+      "every sort_order must be unique, no collision",
+    );
+  });
 });
 
 describe("photos.deletePhoto", () => {

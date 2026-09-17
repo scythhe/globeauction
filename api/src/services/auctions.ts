@@ -126,12 +126,10 @@ export async function list(pool: Pool, actor: Actor | null, filters: auctionsRep
   return Promise.all(auctions.map((a) => present(pool, a, actor)));
 }
 
-// CLAUDE.md rule 3: max_amount / ip_address / user_agent are team-only.
+// BACKEND_SPEC.md §12: max_amount is bidder-only, ip_address/user_agent
+// are team-only. See auctionsRepo.listBids for the column-level redaction.
 export async function listBids(pool: Pool, actor: Actor | null, auctionId: string) {
-  if (actor?.role === "team") {
-    return auctionsRepo.listBidsFull(pool, auctionId);
-  }
-  return auctionsRepo.listBidsPublic(pool, auctionId);
+  return auctionsRepo.listBids(pool, auctionId, actor?.id ?? null, actor?.role === "team");
 }
 
 export async function cancel(pool: Pool, actor: Actor | null, auctionId: string) {

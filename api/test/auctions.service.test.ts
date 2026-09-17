@@ -332,8 +332,12 @@ describe("auctions.buyNow", () => {
   });
 });
 
-describe("auctions.listBids — max_amount/ip/user_agent redaction (CLAUDE.md rule 3)", () => {
-  test("team sees max_amount; a buyer viewing the same auction does not", async () => {
+// BACKEND_SPEC.md §12 (lines 620, 622) is stricter than the old comment
+// here implied: max_amount is bidder-only — never shown to anyone else,
+// team included. ip_address/user_agent are team-only (visible to team on
+// every row, hidden from everyone else). Two independent rules, not one.
+describe("auctions.listBids — max_amount is bidder-only, ip/user_agent are team-only", () => {
+  test("bidder sees their own max_amount; nobody else does, not even team", async () => {
     const team = await createUser(client, { role: "team" });
     const bidder = await createUser(client, { role: "buyer" });
     const viewer = await createUser(client, { role: "buyer" });
@@ -341,16 +345,38 @@ describe("auctions.listBids — max_amount/ip/user_agent redaction (CLAUDE.md ru
     const auction = await createAuction(client, vehicle.id, team.id, { startingPrice: 1000 });
     await placeBid(client, auction.id, bidder.id, 1500);
 
+    const ownView = await auctionsService.listBids(pool, actorFor(bidder.id, "buyer"), auction.id);
+    assert.equal((ownView[0] as { max_amount: string }).max_amount, "1500.00");
+
     const teamView = await auctionsService.listBids(pool, actorFor(team.id), auction.id);
-    assert.equal((teamView[0] as { max_amount: string }).max_amount, "1500.00");
+    assert.equal((teamView[0] as { max_amount: string | null }).max_amount, null);
 
     const buyerView = await auctionsService.listBids(
       pool,
       actorFor(viewer.id, "buyer"),
       auction.id,
     );
-    assert.ok(!("max_amount" in buyerView[0]));
+    assert.equal((buyerView[0] as { max_amount: string | null }).max_amount, null);
     assert.ok(!("ip_address" in buyerView[0]));
+  });
+
+  test("ip_address/user_agent are visible to team on every row, hidden from everyone else", async () => {
+    const team = await createUser(client, { role: "team" });
+    const bidder = await createUser(client, { role: "buyer" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id, { startingPrice: 1000 });
+    await placeBid(client, auction.id, bidder.id, 1500);
+
+    const teamView = await auctionsService.listBids(pool, actorFor(team.id), auction.id);
+    assert.ok((teamView[0] as { ip_address: string | null }).ip_address !== undefined);
+
+    const bidderView = await auctionsService.listBids(
+      pool,
+      actorFor(bidder.id, "buyer"),
+      auction.id,
+    );
+    assert.ok(!("ip_address" in bidderView[0]));
+    assert.ok(!("user_agent" in bidderView[0]));
   });
 });
 

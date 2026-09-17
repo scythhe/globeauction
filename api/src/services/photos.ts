@@ -99,14 +99,12 @@ export async function confirmUpload(
     });
   }
 
-  const existing = await photosRepo.count(pool, vehicleId);
-  if (existing >= MAX_PHOTOS) {
+  const photo = await photosRepo.insertIfUnderCap(pool, vehicleId, publicUrlFor(key), MAX_PHOTOS);
+  if (!photo) {
     await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
     throw new ApiError(400, "photo_limit_reached", { max: MAX_PHOTOS });
   }
-
-  const sortOrder = await photosRepo.nextSortOrder(pool, vehicleId);
-  return photosRepo.insert(pool, vehicleId, publicUrlFor(key), sortOrder);
+  return photo;
 }
 
 export async function listPhotos(pool: Pool, vehicleId: string) {

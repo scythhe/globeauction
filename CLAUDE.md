@@ -48,13 +48,19 @@ one service method. That function is the only path by which a bid row is created
 ## Hard rules
 
 1. **All money is `numeric`.** Never a JS `number`, never floating point. Price
-   arithmetic happens in SQL or with a decimal library. GEL is display only,
-   converted from USD at `auctions.gel_rate`.
+   arithmetic happens in SQL or with a decimal library. GEL is the working
+   currency — every price column holds a GEL figure. USD is a display-only
+   conversion from GEL at `auctions.gel_rate`, computed at render time, never
+   stored, never compared against. (Revised from the original direction —
+   see BACKEND_SPEC.md §10.)
 2. **Bids are written only by the Postgres bid function**, inside a transaction
    that opens with `SELECT ... FROM auctions WHERE id = $1 FOR UPDATE`. Never
    read a price in one request and write a bid based on it in another.
-3. **`bids.max_amount` is never returned** to anyone other than the bidder who
-   set it. Same for `ip_address` and `user_agent` — team only.
+3. **`bids.max_amount` is never returned to anyone other than the bidder who
+   set it** — nobody else, team included. **`ip_address` and `user_agent` are
+   team-only** instead — visible to team on every row, hidden from everyone
+   else. Two separate rules, not one: max_amount is stricter (bidder-only),
+   ip/user_agent is looser (team-only).
 4. **Authorization checks live in the service layer**, not only in route
    middleware. A route that forgets its middleware must still fail.
 5. **Nobody bids on their own organization's cars.** Check `organization_id`,

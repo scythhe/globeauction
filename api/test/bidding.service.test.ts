@@ -1,0 +1,66 @@
+import assert from "node:assert/strict";
+import { after, before, beforeEach, describe, test } from "node:test";
+import type { Client, Pool } from "pg";
+import * as biddingService from "../src/services/bidding.ts";
+import { connect, createAuction, createUser, createVehicle, reset, testPool } from "./helpers.ts";
+import type { Actor } from "../src/types.ts";
+
+let client: Client;
+let pool: Pool;
+
+before(async () => {
+  client = await connect();
+  pool = testPool();
+});
+
+after(async () => {
+  await client.end();
+  await pool.end();
+});
+
+beforeEach(async () => {
+  await reset(client);
+});
+
+function actorFor(id: string, role: "team" | "buyer" | "dealer" = "buyer"): Actor {
+  return { id, role, organizationId: null, canBid: true, isActive: true };
+}
+
+// The API response for POST /auctions/:id/bids is whatever placeBid()
+// returns. place_bid() itself returns the full bids%rowtype (ip_address,
+// user_agent included) even for the bidder's own just-placed bid —
+// BACKEND_SPEC.md §12 says those two columns are team-only, full stop, so
+// the service layer must strip them before a non-team caller ever sees
+// their own response.
+describe("bidding.placeBid — ip_address/user_agent are team-only, even on your own bid", () => {
+  test("a buyer's own placeBid response has no ip_address/user_agent", async () => {
+    const team = await createUser(client, { role: "team" });
+    const bidder = await createUser(client, { role: "buyer" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id, { startingPrice: 1000 });
+
+    const bid = await biddingService.placeBid(pool, actorFor(bidder.id), auction.id, 1500, {
+      ipAddress: "203.0.113.7",
+      userAgent: "curl/8.0",
+    });
+
+    assert.ok(!("ip_address" in bid));
+    assert.ok(!("user_agent" in bid));
+    assert.equal(Number((bid as { max_amount: string }).max_amount), 1500);
+  });
+
+  test("a dealer's own placeBid response also has no ip_address/user_agent", async () => {
+    const team = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id, { startingPrice: 1000 });
+    const dealer = await createUser(client, { role: "dealer" });
+
+    const bid = await biddingService.placeBid(pool, actorFor(dealer.id, "dealer"), auction.id, 1200, {
+      ipAddress: "203.0.113.7",
+      userAgent: "curl/8.0",
+    });
+
+    assert.ok(!("ip_address" in bid));
+    assert.ok(!("user_agent" in bid));
+  });
+});

@@ -112,6 +112,30 @@ describe("place_bid — case B: bidder already holds the high bid", () => {
       (err: PgError) => err.message === "bid_too_low",
     );
   });
+
+  // BACKEND_SPEC.md §5.3 Case B: "This is a bidder increasing their own
+  // ceiling" — raise-only. The generic current_price+increment floor isn't
+  // enough to guarantee that: it's computed from current_price, which
+  // Case B never moves, so a bidder holding a much higher max_amount could
+  // call place_bid again with a *lower* value that still clears that floor
+  // and silently drop their own ceiling — undermining the proxy-bidding
+  // guarantee that a leading max_amount only ever goes up.
+  test("rejects a same-bidder call that would lower their existing max_amount", async () => {
+    const { auction } = await basicAuction(1000);
+    const bidder = await createUser(client);
+    await placeBid(client, auction.id, bidder.id, 1500);
+
+    // 1200 clears the generic floor (current_price 1000 + increment 100 = 1100)
+    // but is still below the bidder's existing ceiling of 1500.
+    await assert.rejects(
+      () => placeBid(client, auction.id, bidder.id, 1200),
+      (err: PgError) => err.message === "bid_too_low",
+    );
+
+    const bids = await listBids(client, auction.id);
+    assert.equal(bids.length, 1);
+    assert.equal(Number(bids[0]!.max_amount), 1500, "ceiling must be unchanged after the rejected call");
+  });
 });
 
 describe("place_bid — case C: new max_amount beats the existing max", () => {

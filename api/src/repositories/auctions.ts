@@ -127,24 +127,26 @@ export async function list(pool: Pool, filters: ListFilters = {}): Promise<Aucti
   return rows;
 }
 
-// Team-only view: includes max_amount, ip_address, user_agent.
-// CLAUDE.md rule 3 — never return these outside this path.
-export async function listBidsFull(pool: Pool, auctionId: string) {
+// BACKEND_SPEC.md §12: max_amount is bidder-only (never shown to anyone
+// else, team included); ip_address/user_agent are team-only (shown to
+// team on every row, hidden from everyone else). Two independent
+// column-level redactions applied per-row in SQL, not two separate views,
+// so there's one query to keep correct instead of two to keep in sync.
+export async function listBids(
+  pool: Pool,
+  auctionId: string,
+  viewerId: string | null,
+  isTeam: boolean,
+) {
+  const teamColumns = isTeam ? ", ip_address, user_agent" : "";
   const { rows } = await pool.query(
-    "select * from bids where auction_id = $1 order by created_at asc",
-    [auctionId],
-  );
-  return rows;
-}
-
-// Public view — explicitly selects only the columns anyone may see.
-export async function listBidsPublic(pool: Pool, auctionId: string) {
-  const { rows } = await pool.query(
-    `select id, auction_id, bidder_id, amount, is_proxy, created_at
+    `select id, auction_id, bidder_id, amount, is_proxy, created_at,
+            case when bidder_id = $2 then max_amount else null end as max_amount
+            ${teamColumns}
        from bids
       where auction_id = $1
       order by amount desc, created_at asc`,
-    [auctionId],
+    [auctionId, viewerId],
   );
   return rows;
 }

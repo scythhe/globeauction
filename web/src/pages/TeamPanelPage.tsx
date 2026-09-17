@@ -41,6 +41,7 @@ export function TeamPanelPage() {
     startingPrice: "",
     reservePrice: "",
     buyNowPrice: "",
+    gelRate: "",
     startsAt: toLocalDatetimeInput(new Date()),
     endsAt: toLocalDatetimeInput(new Date(Date.now() + 24 * 60 * 60 * 1000)),
   });
@@ -125,6 +126,7 @@ export function TeamPanelPage() {
         startingPrice: Number(auctionForm.startingPrice),
         reservePrice: Number(auctionForm.reservePrice),
         buyNowPrice: auctionForm.buyNowPrice ? Number(auctionForm.buyNowPrice) : undefined,
+        gelRate: auctionForm.gelRate ? Number(auctionForm.gelRate) : undefined,
         startsAt: new Date(auctionForm.startsAt).toISOString(),
         endsAt: new Date(auctionForm.endsAt).toISOString(),
       });
@@ -267,6 +269,19 @@ export function TeamPanelPage() {
               value={auctionForm.buyNowPrice}
               onChange={(e) => setAuctionForm({ ...auctionForm, buyNowPrice: e.target.value })}
               placeholder="leave blank to disable"
+              className={inputClass}
+            />
+          </label>
+          <label className={`${labelClass} sm:col-span-2`}>
+            <span className={labelTextClass}>
+              GEL per 1 USD — optional, shows a "≈ $" line on every price if set
+            </span>
+            <input
+              type="number"
+              step="0.0001"
+              value={auctionForm.gelRate}
+              onChange={(e) => setAuctionForm({ ...auctionForm, gelRate: e.target.value })}
+              placeholder="e.g. 2.7000 — leave blank to hide the USD line"
               className={inputClass}
             />
           </label>

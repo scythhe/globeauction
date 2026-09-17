@@ -8,6 +8,11 @@ export interface Bid {
   max_amount: string | null;
   is_proxy: boolean;
   created_at: Date;
+  // place_bid() returns the full bids%rowtype, so these are always present
+  // on the raw row — team-only per BACKEND_SPEC.md §12, callers must strip
+  // them before the response reaches a non-team actor.
+  ip_address: string | null;
+  user_agent: string | null;
 }
 
 // The only function that writes to `bids`, per CLAUDE.md's bidding

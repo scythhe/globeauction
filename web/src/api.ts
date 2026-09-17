@@ -71,6 +71,7 @@ export interface Auction {
   status: string;
   starting_price: string;
   current_price: string;
+  gel_rate: string | null; // GEL-per-1-USD, set at auction creation — see format.ts usdEquivalent()
   reserve_price?: string; // present for team only
   reserveMet?: boolean; // present for everyone else
   nextMinimumBid: string;

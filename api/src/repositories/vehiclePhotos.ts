@@ -16,27 +16,51 @@ export async function count(pool: Pool, vehicleId: string): Promise<number> {
   return Number(rows[0]!.count);
 }
 
-export async function nextSortOrder(pool: Pool, vehicleId: string): Promise<number> {
-  const { rows } = await pool.query<{ next: number }>(
-    "select coalesce(max(sort_order), -1) + 1 as next from vehicle_photos where vehicle_id = $1",
-    [vehicleId],
-  );
-  return rows[0]!.next;
-}
-
-export async function insert(
+// A plain count-then-insert (as requestUpload still does, to fail fast
+// before handing out a presigned URL) has a race: two confirmUpload calls
+// for the same vehicle can both read a count under the cap and both
+// insert, exceeding MAX_PHOTOS and/or colliding on sort_order. This one
+// serializes per-vehicle with a transaction-scoped advisory lock —
+// concurrent callers for *different* vehicles never block each other,
+// concurrent callers for the *same* vehicle queue up instead of racing.
+export async function insertIfUnderCap(
   pool: Pool,
   vehicleId: string,
   url: string,
-  sortOrder: number,
-): Promise<VehiclePhoto> {
-  const { rows } = await pool.query<VehiclePhoto>(
-    `insert into vehicle_photos (vehicle_id, url, sort_order)
-     values ($1, $2, $3)
-     returning *`,
-    [vehicleId, url, sortOrder],
-  );
-  return rows[0]!;
+  maxPhotos: number,
+): Promise<VehiclePhoto | null> {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await client.query("select pg_advisory_xact_lock(hashtext($1))", [vehicleId]);
+
+    const { rows: countRows } = await client.query<{ count: string }>(
+      "select count(*) from vehicle_photos where vehicle_id = $1",
+      [vehicleId],
+    );
+    if (Number(countRows[0]!.count) >= maxPhotos) {
+      await client.query("commit");
+      return null;
+    }
+
+    const { rows: sortRows } = await client.query<{ next: number }>(
+      "select coalesce(max(sort_order), -1) + 1 as next from vehicle_photos where vehicle_id = $1",
+      [vehicleId],
+    );
+    const { rows } = await client.query<VehiclePhoto>(
+      `insert into vehicle_photos (vehicle_id, url, sort_order)
+       values ($1, $2, $3)
+       returning *`,
+      [vehicleId, url, sortRows[0]!.next],
+    );
+    await client.query("commit");
+    return rows[0]!;
+  } catch (err) {
+    await client.query("rollback");
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function listByVehicle(pool: Pool, vehicleId: string): Promise<VehiclePhoto[]> {

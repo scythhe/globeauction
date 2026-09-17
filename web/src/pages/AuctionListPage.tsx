@@ -3,7 +3,7 @@ import { api, type Auction, type Vehicle, type VehiclePhoto } from "../api.ts";
 import { errorMessage } from "../AuthContext.tsx";
 import { StatusBadge } from "../components/StatusBadge.tsx";
 import { CarIcon, ClockIcon, HammerIcon, ShieldCheckIcon } from "../components/icons.tsx";
-import { gel } from "../format.ts";
+import { gel, usdEquivalent } from "../format.ts";
 import { usePolling } from "../usePolling.ts";
 
 interface Row {
@@ -98,7 +98,14 @@ export function AuctionListPage({ onSelect }: { onSelect: (auctionId: string) =>
                 </h3>
                 <div className="mt-2 flex items-baseline justify-between">
                   <span className="text-xs uppercase tracking-wide text-ink-muted">Current bid</span>
-                  <span className="text-xl font-bold text-brand">{gel(auction.current_price)}</span>
+                  <div className="text-right">
+                    <div className="text-xl font-bold text-brand">{gel(auction.current_price)}</div>
+                    {usdEquivalent(auction.current_price, auction.gel_rate) && (
+                      <div className="text-xs text-ink-faint">
+                        {usdEquivalent(auction.current_price, auction.gel_rate)}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </button>

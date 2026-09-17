@@ -53,7 +53,7 @@ export function auctionsRouter(pool: Pool): Router {
       pool,
       req.actor,
       uuidParam(req, "id"),
-      Number(max_amount),
+      max_amount,
       {
         ipAddress: req.ip ?? null,
         userAgent: req.header("user-agent") ?? null,

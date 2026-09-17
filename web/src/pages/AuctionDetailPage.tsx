@@ -4,7 +4,7 @@ import { useAuth, errorMessage } from "../AuthContext.tsx";
 import { StatusBadge } from "../components/StatusBadge.tsx";
 import { CountdownTimer } from "../components/CountdownTimer.tsx";
 import { CarIcon, FuelIcon, GaugeIcon, GearIcon } from "../components/icons.tsx";
-import { gel } from "../format.ts";
+import { gel, usdEquivalent } from "../format.ts";
 import { usePolling } from "../usePolling.ts";
 
 export function AuctionDetailPage({
@@ -53,7 +53,11 @@ export function AuctionDetailPage({
   // live, without touching place_bid() at all.
   usePolling(load, 3000, auction?.status === "live");
 
-  async function submitBid(amount: number) {
+  // amount stays a string end-to-end: the backend validates and stores it
+  // as Postgres `numeric` directly, and round-tripping it through a JS
+  // number here first could misrepresent the exact figure the user typed
+  // at binary-floating-point boundaries (CLAUDE.md hard rule #1).
+  async function submitBid(amount: string) {
     setActionError(null);
     setSubmitting(true);
     try {
@@ -83,12 +87,14 @@ export function AuctionDetailPage({
 
   async function handleMaxBidSubmit(e: FormEvent) {
     e.preventDefault();
-    const amount = Number(maxAmount);
-    if (!Number.isFinite(amount) || amount <= 0) {
+    const trimmed = maxAmount.trim();
+    // Client-side check only, for immediate feedback — Number() here never
+    // touches the value actually sent; the trimmed string goes to the API as-is.
+    if (!Number.isFinite(Number(trimmed)) || Number(trimmed) <= 0 || trimmed === "") {
       setActionError("Enter a valid amount");
       return;
     }
-    await submitBid(amount);
+    await submitBid(trimmed);
   }
 
   async function handleBuyNow() {
@@ -283,9 +289,14 @@ export function AuctionDetailPage({
             </div>
 
             <div className="mb-1 text-xs uppercase tracking-wide text-ink-muted">Current bid</div>
-            <div className="font-display mb-1 text-4xl font-bold text-brand">
+            <div className="font-display text-4xl font-bold text-brand">
               {gel(auction.current_price)}
             </div>
+            {usdEquivalent(auction.current_price, auction.gel_rate) && (
+              <div className="mb-1 text-sm text-ink-faint">
+                {usdEquivalent(auction.current_price, auction.gel_rate)}
+              </div>
+            )}
 
             {/* Persistent status — always visible, always current. This is
                 what Copart actually shows (a standing "Outbid" label), not
@@ -330,6 +341,8 @@ export function AuctionDetailPage({
                 className="mb-3 w-full rounded bg-live py-2.5 font-bold uppercase tracking-wide text-white shadow-[0_0_16px_-4px_theme(colors.live)] transition hover:brightness-110 disabled:opacity-50"
               >
                 Buy Now — {gel(auction.buy_now_price!)}
+                {usdEquivalent(auction.buy_now_price!, auction.gel_rate) &&
+                  ` (${usdEquivalent(auction.buy_now_price!, auction.gel_rate)})`}
               </button>
             )}
 
@@ -366,7 +379,7 @@ export function AuctionDetailPage({
                 <button
                   type="button"
                   disabled={submitting}
-                  onClick={() => submitBid(Number(auction.nextMinimumBid))}
+                  onClick={() => submitBid(auction.nextMinimumBid)}
                   className="mt-2 w-full rounded border border-border py-2 text-sm font-medium text-ink-muted transition hover:border-brand hover:text-ink disabled:opacity-50"
                 >
                   Quick Bid — bid the minimum ({gel(auction.nextMinimumBid)}) right now
