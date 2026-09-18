@@ -652,7 +652,8 @@ don't build it now.
 | Notifications | Done — outbid, ending-soon, reserve-not-met. "Won" deliberately skipped (team contacts winners directly, §7); email transport is a `console.log` stub pending real SMTP/API credentials | 1 |
 | Photo uploads | Done — presigned S3-compatible uploads, real R2 credentials still needed for prod | 1 |
 | Search / home feed | Not started | later (single car/week doesn't need it) |
-| Frontend | Minimal build done — auth, browse, bid, team panel (`/web`) | 1 |
+| Frontend | Done — auth, browse, bid, team panel (`/web`), Copart-matched UI, Buy It Now | 1 |
+| i18n (Georgian/English/Russian) | Done — custom layer (`web/src/i18n/`), Georgian-first with a switcher, every user-facing string and backend error code covered. Georgian/Russian text is machine-drafted and wants a native-speaker pass before real bidders see it | 1 |
 
 ### Suggested order (for the 1–2 week target)
 
@@ -694,6 +695,10 @@ punch list, not a code one:
 - **A GEL→USD rate source**, if the USD display line in §10 is wanted from
   day one — right now `gel_rate` is only ever set if someone passes it in
   by hand at auction creation.
+- **A native-speaker review of the Georgian and Russian translations**
+  (`web/src/i18n/translations.ts`) — machine-drafted, not yet checked by a
+  native speaker. Worth doing before the first real bidder sees them,
+  especially the auction-mechanics copy (Max Bid, reserve, outbid).
 
 Search, home feed, dealer submission, approval queue, and counteroffers are
 all phase 2 — don't build them chasing "completeness" before the first
@@ -717,14 +722,11 @@ Resolved so far:
   reverse of what CLAUDE.md and the schema comment currently say. See §10 —
   including the note there that CLAUDE.md's hard rule #1 needs updating to
   match.
-
-Still open:
-
-- ★ **Language.** CLAUDE.md commits to Georgian, English, and Russian with no
-  hardcoded strings from the start — architectural, not a later toggle. Given
-  the 1–2 week target, worth confirming whether all three need to ship for the
-  first live auction, or whether Georgian-only for launch (with the i18n
-  layer wired up so the other two are just translation work) is acceptable.
+- **Language — decided.** All three ship for the first live auction, not
+  Georgian-only-then-translate-later. Georgian is the default and the
+  language every string is authored for first; English and Russian are
+  switchable via a header control. See §15's build status — the i18n layer
+  is done, not just wired up for later.
 
 ---
 

@@ -68,7 +68,10 @@ one service method. That function is the only path by which a bid row is created
 6. **Schema changes go in a new numbered migration** in `/db`. Never edit an
    applied migration, never change the schema through a GUI.
 7. **Three languages**: Georgian, English, Russian. No hardcoded user-facing
-   strings — everything through the i18n layer from the start.
+   strings — everything through the i18n layer from the start. Done — a
+   custom layer at `web/src/i18n/` (dictionary + context, no dependency),
+   Georgian-first with an English/Russian switcher. New user-facing text
+   goes through `t()`/the translation dictionary, not a literal string.
 
 ## Conventions
 
