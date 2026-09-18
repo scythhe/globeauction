@@ -508,3 +508,112 @@ describe("auctions.cancel / acceptAsIs / decline / reassignSale", () => {
     );
   });
 });
+
+// db/009_auction_events.sql: cancel_auction()/reassign_sale() log an
+// auction_events row atomically with the state change — see that migration
+// for why (reassignSale used to overwrite sold_to/final_price with no
+// record of the original winner; cancel just flipped status with no
+// record of who or from what state).
+describe("auction_events — recorded via cancel/reassignSale, read via listEvents", () => {
+  test("cancel logs a 'cancelled' event with the actor and the previous status", async () => {
+    const team = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id);
+    await setAuctionStatus(client, auction.id, "live");
+
+    await auctionsService.cancel(pool, actorFor(team.id), auction.id);
+
+    const events = await auctionsService.listEvents(pool, actorFor(team.id), auction.id);
+    assert.equal(events.length, 1);
+    assert.equal(events[0]!.event_type, "cancelled");
+    assert.equal(events[0]!.actor_id, team.id);
+    assert.equal(events[0]!.detail.previous_status, "live");
+  });
+
+  test("a rejected cancel (auction already sold) logs nothing", async () => {
+    const team = await createUser(client, { role: "team" });
+    const bidder = await createUser(client, { role: "buyer" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id, { startingPrice: 1000 });
+    await placeBid(client, auction.id, bidder.id, 1500);
+    await setAuctionStatus(client, auction.id, "sold", { finalPrice: 1000, soldTo: bidder.id });
+
+    await assert.rejects(() => auctionsService.cancel(pool, actorFor(team.id), auction.id));
+
+    const events = await auctionsService.listEvents(pool, actorFor(team.id), auction.id);
+    assert.equal(events.length, 0, "a change that didn't happen must not be logged");
+  });
+
+  test("reassignSale logs a 'reassigned' event with before/after sold_to and final_price", async () => {
+    const team = await createUser(client, { role: "team" });
+    const alice = await createUser(client, { role: "buyer" });
+    const bob = await createUser(client, { role: "buyer" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id, { startingPrice: 1000 });
+    await placeBid(client, auction.id, alice.id, 1500);
+    await placeBid(client, auction.id, bob.id, 3000);
+    await setAuctionStatus(client, auction.id, "sold", { finalPrice: 1600, soldTo: bob.id });
+
+    await auctionsService.reassignSale(pool, actorFor(team.id), auction.id, alice.id);
+
+    const events = await auctionsService.listEvents(pool, actorFor(team.id), auction.id);
+    assert.equal(events.length, 1);
+    assert.equal(events[0]!.event_type, "reassigned");
+    assert.equal(events[0]!.actor_id, team.id);
+    assert.equal(events[0]!.detail.previous_sold_to, bob.id);
+    assert.equal(Number(events[0]!.detail.previous_final_price), 1600);
+    assert.equal(events[0]!.detail.new_sold_to, alice.id);
+    assert.equal(Number(events[0]!.detail.new_final_price), 1500);
+  });
+
+  test("a rejected reassignSale (target has no bid) logs nothing", async () => {
+    const team = await createUser(client, { role: "team" });
+    const bidder = await createUser(client, { role: "buyer" });
+    const strangerNotBidding = await createUser(client, { role: "buyer" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id, { startingPrice: 1000 });
+    await placeBid(client, auction.id, bidder.id, 1500);
+    await setAuctionStatus(client, auction.id, "sold", { finalPrice: 1000, soldTo: bidder.id });
+
+    await assert.rejects(() =>
+      auctionsService.reassignSale(pool, actorFor(team.id), auction.id, strangerNotBidding.id),
+    );
+
+    const events = await auctionsService.listEvents(pool, actorFor(team.id), auction.id);
+    assert.equal(events.length, 0);
+  });
+
+  test("listEvents: team-only", async () => {
+    const team = await createUser(client, { role: "team" });
+    const buyer = await createUser(client, { role: "buyer" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id);
+
+    await assert.rejects(
+      () => auctionsService.listEvents(pool, actorFor(buyer.id, "buyer"), auction.id),
+      (err: unknown) => {
+        assert.equal((err as ApiError).code, "forbidden");
+        return true;
+      },
+    );
+  });
+
+  test("events are ordered oldest first", async () => {
+    // cancel() is idempotent on an already-cancelled auction (its status
+    // guard only excludes sold/unsold), so cancelling twice is a simple
+    // way to get two real rows on one auction to check ordering with.
+    const team = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id);
+
+    await auctionsService.cancel(pool, actorFor(team.id), auction.id);
+    await auctionsService.cancel(pool, actorFor(team.id), auction.id);
+
+    const events = await auctionsService.listEvents(pool, actorFor(team.id), auction.id);
+    assert.equal(events.length, 2);
+    assert.ok(
+      events[0]!.occurred_at <= events[1]!.occurred_at,
+      "must be ordered oldest first",
+    );
+  });
+});

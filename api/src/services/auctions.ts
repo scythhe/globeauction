@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 import * as auctionsRepo from "../repositories/auctions.ts";
 import * as vehiclesRepo from "../repositories/vehicles.ts";
+import * as auctionEventsRepo from "../repositories/auctionEvents.ts";
 import { ApiError, Errors } from "../errors.ts";
 import type { Actor } from "../types.ts";
 
@@ -135,9 +136,17 @@ export async function listBids(pool: Pool, actor: Actor | null, auctionId: strin
 
 export async function cancel(pool: Pool, actor: Actor | null, auctionId: string) {
   requireTeam(actor);
-  const auction = await auctionsRepo.cancel(pool, auctionId);
+  const auction = await auctionsRepo.cancel(pool, auctionId, actor!.id);
   if (!auction) throw new ApiError(409, "cannot_cancel");
   return auction;
+}
+
+// Team-only: the recorded history of cancellations/reassignments for an
+// auction. See db/009_auction_events.sql for why this exists — reassignSale
+// and cancel used to overwrite state with no record of the change.
+export async function listEvents(pool: Pool, actor: Actor | null, auctionId: string) {
+  requireTeam(actor);
+  return auctionEventsRepo.listByAuction(pool, auctionId);
 }
 
 // §6: in phase 1 the seller on the pending_seller path is always team.
@@ -164,7 +173,7 @@ export async function reassignSale(
   newSoldTo: string,
 ) {
   requireTeam(actor);
-  const auction = await auctionsRepo.reassignSale(pool, auctionId, newSoldTo);
+  const auction = await auctionsRepo.reassignSale(pool, auctionId, newSoldTo, actor!.id);
   if (!auction) {
     throw new ApiError(409, "cannot_reassign", {
       reason: "auction is not sold, or the given user has no bid on this auction",

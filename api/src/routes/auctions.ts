@@ -40,6 +40,12 @@ export function auctionsRouter(pool: Pool): Router {
     res.json(bids);
   });
 
+  // Team-only: recorded cancellations/reassignments for this auction.
+  router.get("/:id/events", requireUuidParams("id"), async (req, res) => {
+    const events = await auctionsService.listEvents(pool, req.actor, uuidParam(req, "id"));
+    res.json(events);
+  });
+
   router.post("/:id/cancel", requireUuidParams("id"), async (req, res) => {
     const auction = await auctionsService.cancel(pool, req.actor, uuidParam(req, "id"));
     res.json(auction);

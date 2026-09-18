@@ -151,13 +151,14 @@ export async function listBids(
   return rows;
 }
 
-export async function cancel(pool: Pool, auctionId: string): Promise<Auction | null> {
-  const { rows } = await pool.query<Auction>(
-    `update auctions set status = 'cancelled'
-      where id = $1 and status not in ('sold', 'unsold')
-      returning *`,
-    [auctionId],
-  );
+// cancel_auction() (db/009_auction_events.sql) does the update and logs an
+// auction_events row atomically, in the same statement — see that
+// migration for why.
+export async function cancel(pool: Pool, auctionId: string, actorId: string): Promise<Auction | null> {
+  const { rows } = await pool.query<Auction>("select * from cancel_auction($1, $2) as auction", [
+    auctionId,
+    actorId,
+  ]);
   return rows[0] ?? null;
 }
 
@@ -189,34 +190,21 @@ export async function decline(pool: Pool, auctionId: string): Promise<Auction | 
 
 // §7: post-sale settlement. Manual reassignment to the underbidder when the
 // winner doesn't pay. status stays 'sold' throughout.
+//
+// reassign_sale() (db/009_auction_events.sql) still requires newSoldTo to
+// have a real bid on this auction (see the migration for why: "no matching
+// bid" yielding zero rows is what turns into a clean cannot_reassign error
+// downstream, instead of a raw constraint violation), and now also logs an
+// auction_events row atomically, in the same statement as the update.
 export async function reassignSale(
   pool: Pool,
   auctionId: string,
   newSoldTo: string,
+  actorId: string,
 ): Promise<Auction | null> {
-  // Found by a test, not a pentest: if newSoldTo has no bid on this
-  // auction, the old version of this query set sold_to anyway while the
-  // final_price subquery returned null — violating the auctions_sold CHECK
-  // constraint (status = 'sold' requires both non-null) and surfacing as a
-  // raw, uncaught Postgres error (23514) instead of a clean 409. Requiring
-  // the bid to exist in the WHERE clause itself means "no matching bid"
-  // just yields zero rows, which the service layer already turns into a
-  // clean cannot_reassign error.
   const { rows } = await pool.query<Auction>(
-    `with target_bid as (
-       select amount from bids
-        where auction_id = $1 and bidder_id = $2
-        order by amount desc
-        limit 1
-     )
-     update auctions
-        set sold_to = $2,
-            final_price = (select amount from target_bid)
-      where id = $1
-        and status = 'sold'
-        and exists (select 1 from target_bid)
-      returning *`,
-    [auctionId, newSoldTo],
+    "select * from reassign_sale($1, $2, $3) as auction",
+    [auctionId, newSoldTo, actorId],
   );
   return rows[0] ?? null;
 }
