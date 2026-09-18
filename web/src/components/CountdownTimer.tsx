@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "../i18n/index.tsx";
 
 function formatRemaining(ms: number): string {
   if (ms <= 0) return "00:00:00";
@@ -16,6 +17,7 @@ function formatRemaining(ms: number): string {
 // single biggest thing that makes a timed auction feel like Copart's live
 // bid wars instead of a static countdown.
 export function CountdownTimer({ endsAt, live }: { endsAt: string; live: boolean }) {
+  const { t } = useTranslation();
   const [now, setNow] = useState(() => Date.now());
   const [justExtended, setJustExtended] = useState(false);
   const prevEndsAt = useRef(endsAt);
@@ -52,11 +54,11 @@ export function CountdownTimer({ endsAt, live }: { endsAt: string; live: boolean
           ended ? "text-ink-faint" : urgent ? "text-brand" : "text-ink",
         ].join(" ")}
       >
-        {ended ? "ENDED" : formatRemaining(remaining)}
+        {ended ? t("countdown.ended") : formatRemaining(remaining)}
       </span>
       {justExtended && (
         <span className="animate-pulse rounded bg-brand px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-white">
-          Extended
+          {t("countdown.extended")}
         </span>
       )}
     </div>

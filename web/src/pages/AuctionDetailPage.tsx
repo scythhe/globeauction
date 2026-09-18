@@ -6,6 +6,7 @@ import { CountdownTimer } from "../components/CountdownTimer.tsx";
 import { CarIcon, FuelIcon, GaugeIcon, GearIcon } from "../components/icons.tsx";
 import { gel, usdEquivalent } from "../format.ts";
 import { usePolling } from "../usePolling.ts";
+import { useTranslation } from "../i18n/index.tsx";
 
 export function AuctionDetailPage({
   auctionId,
@@ -15,6 +16,7 @@ export function AuctionDetailPage({
   onBack: () => void;
 }) {
   const { user } = useAuth();
+  const { t } = useTranslation();
   const [auction, setAuction] = useState<Auction | null>(null);
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const [photos, setPhotos] = useState<VehiclePhoto[]>([]);
@@ -69,7 +71,7 @@ export function AuctionDetailPage({
       // must never be reported as "your bid failed" — it wasn't the bid
       // that failed.
       if (err instanceof ApiError && err.code === "bid_too_low") {
-        setActionError(`Too low — minimum is ${err.extra.minimum} ₾`);
+        setActionError(t("detail.tooLowMinimum", { amount: err.extra.minimum as string }));
       } else {
         setActionError(errorMessage(err));
       }
@@ -91,14 +93,14 @@ export function AuctionDetailPage({
     // Client-side check only, for immediate feedback — Number() here never
     // touches the value actually sent; the trimmed string goes to the API as-is.
     if (!Number.isFinite(Number(trimmed)) || Number(trimmed) <= 0 || trimmed === "") {
-      setActionError("Enter a valid amount");
+      setActionError(t("detail.enterValidAmount"));
       return;
     }
     await submitBid(trimmed);
   }
 
   async function handleBuyNow() {
-    if (!confirm(`Buy this now for ${gel(auction!.buy_now_price!)}? This ends the auction immediately.`)) {
+    if (!confirm(t("detail.buyNowConfirm", { price: gel(auction!.buy_now_price!) }))) {
       return;
     }
     setActionError(null);
@@ -142,7 +144,7 @@ export function AuctionDetailPage({
   return (
     <div>
       <button type="button" onClick={onBack} className="mb-4 text-sm text-ink-muted hover:text-ink">
-        ← back to auctions
+        {t("detail.back")}
       </button>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-5">
@@ -154,7 +156,7 @@ export function AuctionDetailPage({
             ) : (
               <div className="flex h-full w-full flex-col items-center justify-center gap-2 bg-gradient-to-br from-surface-hover to-black text-ink-faint">
                 <CarIcon className="h-14 w-14" />
-                <span className="text-sm">No photos yet</span>
+                <span className="text-sm">{t("detail.noPhotosYet")}</span>
               </div>
             )}
           </div>
@@ -180,44 +182,44 @@ export function AuctionDetailPage({
               {vehicle.year} {vehicle.make} {vehicle.model}
             </h1>
             <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
-              {vehicle.body_style && <Spec label="Body style" value={vehicle.body_style} />}
-              {vehicle.color && <Spec label="Color" value={vehicle.color} />}
+              {vehicle.body_style && <Spec label={t("spec.bodyStyle")} value={vehicle.body_style} />}
+              {vehicle.color && <Spec label={t("spec.color")} value={vehicle.color} />}
               {vehicle.mileage !== null && (
                 <Spec
                   icon={<GaugeIcon className="h-3.5 w-3.5" />}
-                  label="Mileage"
+                  label={t("spec.mileage")}
                   value={`${vehicle.mileage.toLocaleString()} ${vehicle.mileage_unit}${
-                    vehicle.odometer_accurate === false ? " (unconfirmed)" : ""
+                    vehicle.odometer_accurate === false ? t("spec.mileageUnconfirmed") : ""
                   }`}
                 />
               )}
               {vehicle.engine_volume && (
-                <Spec label="Engine" value={`${vehicle.engine_volume}L${vehicle.cylinders ? ` / ${vehicle.cylinders}cyl` : ""}`} />
+                <Spec label={t("spec.engine")} value={`${vehicle.engine_volume}L${vehicle.cylinders ? ` / ${vehicle.cylinders}cyl` : ""}`} />
               )}
               {vehicle.fuel_type && (
-                <Spec icon={<FuelIcon className="h-3.5 w-3.5" />} label="Fuel" value={vehicle.fuel_type} />
+                <Spec icon={<FuelIcon className="h-3.5 w-3.5" />} label={t("spec.fuel")} value={vehicle.fuel_type} />
               )}
               {vehicle.transmission && (
-                <Spec icon={<GearIcon className="h-3.5 w-3.5" />} label="Transmission" value={vehicle.transmission} />
+                <Spec icon={<GearIcon className="h-3.5 w-3.5" />} label={t("spec.transmission")} value={vehicle.transmission} />
               )}
-              {vehicle.drive_type && <Spec label="Drive type" value={vehicle.drive_type} />}
-              {vehicle.doors && <Spec label="Doors" value={vehicle.doors} />}
-              {vehicle.steering_side && <Spec label="Steering" value={vehicle.steering_side} />}
-              {vehicle.interior_color && <Spec label="Interior" value={vehicle.interior_color} />}
-              {vehicle.vin && <Spec label="VIN" value={vehicle.vin} />}
-              {vehicle.location && <Spec label="Location" value={vehicle.location} />}
-              <Spec label="Customs" value={vehicle.customs_cleared ? "Cleared" : "Not cleared"} />
+              {vehicle.drive_type && <Spec label={t("spec.driveType")} value={vehicle.drive_type} />}
+              {vehicle.doors && <Spec label={t("spec.doors")} value={vehicle.doors} />}
+              {vehicle.steering_side && <Spec label={t("spec.steering")} value={vehicle.steering_side} />}
+              {vehicle.interior_color && <Spec label={t("spec.interior")} value={vehicle.interior_color} />}
+              {vehicle.vin && <Spec label={t("spec.vin")} value={vehicle.vin} />}
+              {vehicle.location && <Spec label={t("spec.location")} value={vehicle.location} />}
+              <Spec label={t("spec.customs")} value={vehicle.customs_cleared ? t("spec.customsCleared") : t("spec.customsNotCleared")} />
               {vehicle.tech_inspection !== null && (
-                <Spec label="Tech inspection" value={vehicle.tech_inspection ? "Passed" : "Not passed"} />
+                <Spec label={t("spec.techInspection")} value={vehicle.tech_inspection ? t("spec.techPassed") : t("spec.techNotPassed")} />
               )}
               {/* Salvage-lot fields — only meaningful once phase 2 lists
                   damaged vehicles; phase-1 retail stock leaves these
                   null/"unknown", so they simply don't render here yet. */}
-              {vehicle.damage_primary && <Spec label="Damage" value={vehicle.damage_primary} />}
-              {vehicle.run !== "unknown" && <Spec label="Runs/drives" value={vehicle.run.replace(/_/g, " ")} />}
-              {vehicle.title !== "unknown" && <Spec label="Title" value={vehicle.title.replace(/_/g, " ")} />}
+              {vehicle.damage_primary && <Spec label={t("spec.damage")} value={vehicle.damage_primary} />}
+              {vehicle.run !== "unknown" && <Spec label={t("spec.runsAndDrives")} value={vehicle.run.replace(/_/g, " ")} />}
+              {vehicle.title !== "unknown" && <Spec label={t("spec.title")} value={vehicle.title.replace(/_/g, " ")} />}
               {vehicle.has_keys !== null && (
-                <Spec label="Keys" value={vehicle.has_keys ? "Present" : "Missing"} />
+                <Spec label={t("spec.keys")} value={vehicle.has_keys ? t("spec.keysPresent") : t("spec.keysMissing")} />
               )}
             </dl>
             {vehicle.features.length > 0 && (
@@ -238,9 +240,9 @@ export function AuctionDetailPage({
           </div>
 
           <div className="mt-6">
-            <h2 className="font-display mb-2 text-lg font-semibold">Bid history</h2>
+            <h2 className="font-display mb-2 text-lg font-semibold">{t("detail.bidHistory")}</h2>
             {bids.length === 0 ? (
-              <p className="text-sm text-ink-muted">No bids yet.</p>
+              <p className="text-sm text-ink-muted">{t("detail.noBidsYet")}</p>
             ) : (
               <ul className="divide-y divide-border rounded border border-border">
                 {bids
@@ -265,11 +267,11 @@ export function AuctionDetailPage({
                           {gel(b.amount)}
                           {isLeading && (
                             <span className="ml-2 rounded bg-live/20 px-1.5 py-0.5 text-xs font-semibold uppercase text-live">
-                              Leading
+                              {t("detail.leading")}
                             </span>
                           )}
-                          {isMine && <span className="ml-2 text-xs text-ink-faint">(you)</span>}
-                          {b.is_proxy && <span className="ml-2 text-xs text-ink-faint">proxy</span>}
+                          {isMine && <span className="ml-2 text-xs text-ink-faint">{t("detail.you")}</span>}
+                          {b.is_proxy && <span className="ml-2 text-xs text-ink-faint">{t("detail.proxy")}</span>}
                         </span>
                         <span className="text-ink-faint">{new Date(b.created_at).toLocaleTimeString()}</span>
                       </li>
@@ -288,7 +290,7 @@ export function AuctionDetailPage({
               <CountdownTimer endsAt={auction.ends_at} live={isLive} />
             </div>
 
-            <div className="mb-1 text-xs uppercase tracking-wide text-ink-muted">Current bid</div>
+            <div className="mb-1 text-xs uppercase tracking-wide text-ink-muted">{t("detail.currentBid")}</div>
             <div className="font-display text-4xl font-bold text-brand">
               {gel(auction.current_price)}
             </div>
@@ -303,12 +305,12 @@ export function AuctionDetailPage({
                 a message that flashes once after you click and disappears. */}
             {myStatus === "winning" && (
               <div className="mb-3 inline-flex items-center gap-1.5 rounded bg-live/15 px-2 py-1 text-xs font-bold uppercase tracking-wider text-live">
-                ● You're winning
+                ● {t("detail.winning")}
               </div>
             )}
             {myStatus === "outbid" && (
               <div className="mb-3 inline-flex items-center gap-1.5 rounded bg-brand/15 px-2 py-1 text-xs font-bold uppercase tracking-wider text-brand">
-                ● Outbid
+                ● {t("detail.outbid")}
               </div>
             )}
 
@@ -318,18 +320,19 @@ export function AuctionDetailPage({
                   auction.reserveMet ? "bg-live/15 text-live" : "bg-warn/15 text-warn"
                 }`}
               >
-                {auction.reserveMet ? "Reserve met" : "Reserve not yet met"}
+                {auction.reserveMet ? t("detail.reserveMet") : t("detail.reserveNotMet")}
               </div>
             )}
             {auction.reserve_price && (
               <div className="mb-3 text-xs text-ink-faint">
-                Reserve: {gel(auction.reserve_price)} (team view)
+                {t("detail.reserveTeamView", { price: gel(auction.reserve_price) })}
               </div>
             )}
 
             {auction.status === "sold" && (
               <p className="mb-3 text-sm text-ink-muted">
-                Sold for <span className="font-semibold text-ink">{gel(auction.final_price!)}</span>
+                {t("detail.soldFor")}{" "}
+                <span className="font-semibold text-ink">{gel(auction.final_price!)}</span>
               </p>
             )}
 
@@ -340,7 +343,7 @@ export function AuctionDetailPage({
                 disabled={submitting}
                 className="mb-3 w-full rounded bg-live py-2.5 font-bold uppercase tracking-wide text-white shadow-[0_0_16px_-4px_theme(colors.live)] transition hover:brightness-110 disabled:opacity-50"
               >
-                Buy Now — {gel(auction.buy_now_price!)}
+                {t("detail.buyNowButton", { price: gel(auction.buy_now_price!) })}
                 {usdEquivalent(auction.buy_now_price!, auction.gel_rate) &&
                   ` (${usdEquivalent(auction.buy_now_price!, auction.gel_rate)})`}
               </button>
@@ -352,18 +355,15 @@ export function AuctionDetailPage({
                     the most you'll pay, the system bids for you, only as
                     much as needed to stay ahead, up to that number. */}
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
-                  Max Bid
+                  {t("detail.maxBidLabel")}
                 </label>
-                <p className="mb-2 text-xs text-ink-faint">
-                  Enter the most you're willing to pay. We bid on your behalf automatically,
-                  raising only as far as needed to keep you in the lead — never past this number.
-                </p>
+                <p className="mb-2 text-xs text-ink-faint">{t("detail.maxBidExplainer")}</p>
                 <form onSubmit={handleMaxBidSubmit} className="flex gap-2">
                   <input
                     type="number"
                     value={maxAmount}
                     onChange={(e) => setMaxAmount(e.target.value)}
-                    placeholder={`min ${auction.nextMinimumBid}`}
+                    placeholder={t("detail.minPlaceholder", { amount: auction.nextMinimumBid })}
                     min={0}
                     className="w-full rounded border border-border bg-bg px-3 py-2 text-ink outline-none focus:border-brand"
                   />
@@ -372,7 +372,7 @@ export function AuctionDetailPage({
                     disabled={submitting}
                     className="shrink-0 rounded bg-brand px-4 py-2 text-sm font-bold text-white shadow-[0_0_16px_-4px_var(--color-brand)] transition hover:bg-brand-hover disabled:opacity-50"
                   >
-                    Place Max Bid
+                    {t("detail.placeMaxBid")}
                   </button>
                 </form>
 
@@ -382,7 +382,7 @@ export function AuctionDetailPage({
                   onClick={() => submitBid(auction.nextMinimumBid)}
                   className="mt-2 w-full rounded border border-border py-2 text-sm font-medium text-ink-muted transition hover:border-brand hover:text-ink disabled:opacity-50"
                 >
-                  Quick Bid — bid the minimum ({gel(auction.nextMinimumBid)}) right now
+                  {t("detail.quickBid", { amount: gel(auction.nextMinimumBid) })}
                 </button>
               </div>
             )}
@@ -390,15 +390,13 @@ export function AuctionDetailPage({
             {actionError && <p className="mt-2 text-sm text-brand">{actionError}</p>}
 
             {isLive && canBid && !user?.canBid && (
-              <p className="mt-2 text-sm italic text-ink-muted">
-                Bidding isn't enabled on your account yet — contact the team.
-              </p>
+              <p className="mt-2 text-sm italic text-ink-muted">{t("detail.biddingNotEnabled")}</p>
             )}
             {isLive && !canBid && user && (
-              <p className="mt-2 text-sm italic text-ink-muted">Team accounts can't bid.</p>
+              <p className="mt-2 text-sm italic text-ink-muted">{t("detail.teamCannotBid")}</p>
             )}
             {isLive && !user && (
-              <p className="mt-2 text-sm italic text-ink-muted">Log in to bid.</p>
+              <p className="mt-2 text-sm italic text-ink-muted">{t("detail.logInToBid")}</p>
             )}
           </div>
         </div>

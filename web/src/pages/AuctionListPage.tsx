@@ -5,6 +5,7 @@ import { StatusBadge } from "../components/StatusBadge.tsx";
 import { CarIcon, ClockIcon, HammerIcon, ShieldCheckIcon } from "../components/icons.tsx";
 import { gel, usdEquivalent } from "../format.ts";
 import { usePolling } from "../usePolling.ts";
+import { useTranslation } from "../i18n/index.tsx";
 
 interface Row {
   auction: Auction;
@@ -13,6 +14,7 @@ interface Row {
 }
 
 export function AuctionListPage({ onSelect }: { onSelect: (auctionId: string) => void }) {
+  const { t } = useTranslation();
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,7 +61,7 @@ export function AuctionListPage({ onSelect }: { onSelect: (auctionId: string) =>
       <Hero liveCount={liveCount} soldCount={soldCount} totalBidVolume={totalBidVolume} />
 
       {rows.length === 0 ? (
-        <p className="text-ink-muted">No auctions yet.</p>
+        <p className="text-ink-muted">{t("list.noAuctions")}</p>
       ) : (
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {rows.map(({ auction, vehicle, photo }) => (
@@ -79,7 +81,7 @@ export function AuctionListPage({ onSelect }: { onSelect: (auctionId: string) =>
                 ) : (
                   <div className="flex h-full w-full flex-col items-center justify-center gap-1.5 text-ink-faint">
                     <CarIcon className="h-10 w-10" />
-                    <span className="text-xs">No photo yet</span>
+                    <span className="text-xs">{t("list.noPhotoYet")}</span>
                   </div>
                 )}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
@@ -88,16 +90,16 @@ export function AuctionListPage({ onSelect }: { onSelect: (auctionId: string) =>
                 </div>
                 {auction.buy_now_price && !auction.high_bid_id && auction.status === "live" && (
                   <div className="absolute right-2 top-2 rounded bg-black/70 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-live">
-                    Buy Now
+                    {t("list.buyNowBadge")}
                   </div>
                 )}
               </div>
               <div className="p-4">
                 <h3 className="font-display truncate text-lg font-semibold text-ink">
-                  {vehicle ? `${vehicle.year} ${vehicle.make} ${vehicle.model}` : "Vehicle"}
+                  {vehicle ? `${vehicle.year} ${vehicle.make} ${vehicle.model}` : t("list.vehicleFallback")}
                 </h3>
                 <div className="mt-2 flex items-baseline justify-between">
-                  <span className="text-xs uppercase tracking-wide text-ink-muted">Current bid</span>
+                  <span className="text-xs uppercase tracking-wide text-ink-muted">{t("list.currentBid")}</span>
                   <div className="text-right">
                     <div className="text-xl font-bold text-brand">{gel(auction.current_price)}</div>
                     {usdEquivalent(auction.current_price, auction.gel_rate) && (
@@ -125,6 +127,7 @@ function Hero({
   soldCount: number;
   totalBidVolume: number;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="relative mb-8 overflow-hidden rounded-xl border border-border bg-surface p-8">
       {/* Decorative gradient glow — CSS only, no external imagery to source. */}
@@ -133,21 +136,18 @@ function Hero({
 
       <div className="relative">
         <h1 className="font-display text-3xl font-bold leading-tight tracking-wide sm:text-4xl">
-          ONE CAR. ONE WEEK.
+          {t("hero.titleLine1")}
           <br />
-          <span className="text-brand">ONE AUCTION.</span>
+          <span className="text-brand">{t("hero.titleLine2")}</span>
         </h1>
-        <p className="mt-3 max-w-md text-sm text-ink-muted">
-          Company-owned inventory, sold to the highest bidder — proxy bidding, live updates,
-          Buy It Now.
-        </p>
+        <p className="mt-3 max-w-md text-sm text-ink-muted">{t("hero.subtitle")}</p>
 
         <div className="mt-6 grid grid-cols-3 gap-4 border-t border-border pt-6 sm:max-w-md">
-          <Stat icon={<HammerIcon className="h-5 w-5" />} label="Live now" value={String(liveCount)} />
-          <Stat icon={<ShieldCheckIcon className="h-5 w-5" />} label="Sold" value={String(soldCount)} />
+          <Stat icon={<HammerIcon className="h-5 w-5" />} label={t("hero.liveNow")} value={String(liveCount)} />
+          <Stat icon={<ShieldCheckIcon className="h-5 w-5" />} label={t("hero.sold")} value={String(soldCount)} />
           <Stat
             icon={<ClockIcon className="h-5 w-5" />}
-            label="Total sold volume"
+            label={t("hero.totalSoldVolume")}
             value={totalBidVolume > 0 ? gel(totalBidVolume) : "—"}
           />
         </div>

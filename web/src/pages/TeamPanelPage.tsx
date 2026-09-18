@@ -2,6 +2,7 @@ import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { api, type Vehicle, type VehiclePhoto } from "../api.ts";
 import { errorMessage } from "../AuthContext.tsx";
 import { gel } from "../format.ts";
+import { useTranslation } from "../i18n/index.tsx";
 
 interface TeamUser {
   id: string;
@@ -29,6 +30,7 @@ const buttonClass =
 const sectionClass = "rounded-lg border border-border bg-surface p-5";
 
 export function TeamPanelPage() {
+  const { t } = useTranslation();
   const [vehicleId, setVehicleId] = useState("");
   const [vehicleForm, setVehicleForm] = useState({ make: "", model: "", year: "" });
   const [vehicleError, setVehicleError] = useState<string | null>(null);
@@ -156,27 +158,27 @@ export function TeamPanelPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="font-display text-3xl font-bold tracking-wide">Team panel</h1>
+      <h1 className="font-display text-3xl font-bold tracking-wide">{t("team.title")}</h1>
 
       <section className={sectionClass}>
-        <h3 className="font-display mb-4 text-lg font-semibold">1. Create this week's vehicle</h3>
+        <h3 className="font-display mb-4 text-lg font-semibold">{t("team.step1Title")}</h3>
         <form onSubmit={handleCreateVehicle} className="grid grid-cols-1 gap-3 sm:grid-cols-4">
           <input
-            placeholder="Make"
+            placeholder={t("team.make")}
             value={vehicleForm.make}
             onChange={(e) => setVehicleForm({ ...vehicleForm, make: e.target.value })}
             required
             className={inputClass}
           />
           <input
-            placeholder="Model"
+            placeholder={t("team.model")}
             value={vehicleForm.model}
             onChange={(e) => setVehicleForm({ ...vehicleForm, model: e.target.value })}
             required
             className={inputClass}
           />
           <input
-            placeholder="Year"
+            placeholder={t("team.year")}
             type="number"
             value={vehicleForm.year}
             onChange={(e) => setVehicleForm({ ...vehicleForm, year: e.target.value })}
@@ -184,20 +186,20 @@ export function TeamPanelPage() {
             className={inputClass}
           />
           <button type="submit" className={buttonClass}>
-            Create vehicle
+            {t("team.createVehicle")}
           </button>
         </form>
         {vehicleError && <p className="mt-2 text-sm text-brand">{vehicleError}</p>}
         {vehicleId && (
           <p className="mt-2 text-xs text-ink-faint">
-            Vehicle ID: <span className="font-mono">{vehicleId}</span>
+            {t("team.vehicleIdLabel")}: <span className="font-mono">{vehicleId}</span>
           </p>
         )}
       </section>
 
       {vehicleId && (
         <section className={sectionClass}>
-          <h3 className="font-display mb-4 text-lg font-semibold">1b. Photos</h3>
+          <h3 className="font-display mb-4 text-lg font-semibold">{t("team.step1bTitle")}</h3>
           <div className="mb-3 flex flex-wrap gap-2">
             {photos.map((p) => (
               <div key={p.id} className="group relative h-20 w-28 overflow-hidden rounded border border-border">
@@ -216,7 +218,7 @@ export function TeamPanelPage() {
             ))}
           </div>
           <label className="inline-block cursor-pointer rounded border border-dashed border-border px-4 py-2 text-sm text-ink-muted hover:border-brand hover:text-ink">
-            {uploading ? "Uploading…" : "+ Add photo (jpeg/png/webp, max 10MB)"}
+            {uploading ? t("common.uploading") : t("team.addPhoto")}
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp"
@@ -230,20 +232,20 @@ export function TeamPanelPage() {
       )}
 
       <section className={sectionClass}>
-        <h3 className="font-display mb-4 text-lg font-semibold">2. Create the auction</h3>
+        <h3 className="font-display mb-4 text-lg font-semibold">{t("team.step2Title")}</h3>
         <form onSubmit={handleCreateAuction} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className={`${labelClass} sm:col-span-2`}>
-            <span className={labelTextClass}>Vehicle ID</span>
+            <span className={labelTextClass}>{t("team.vehicleIdLabel")}</span>
             <input
               value={vehicleId}
               onChange={(e) => setVehicleId(e.target.value)}
-              placeholder="from step 1, or paste one"
+              placeholder={t("team.vehicleIdPlaceholder")}
               required
               className={inputClass}
             />
           </label>
           <label className={labelClass}>
-            <span className={labelTextClass}>Starting price (₾)</span>
+            <span className={labelTextClass}>{t("team.startingPrice")}</span>
             <input
               type="number"
               value={auctionForm.startingPrice}
@@ -253,7 +255,7 @@ export function TeamPanelPage() {
             />
           </label>
           <label className={labelClass}>
-            <span className={labelTextClass}>Reserve price (₾) — must be ≥ starting price</span>
+            <span className={labelTextClass}>{t("team.reservePrice")}</span>
             <input
               type="number"
               value={auctionForm.reservePrice}
@@ -263,30 +265,28 @@ export function TeamPanelPage() {
             />
           </label>
           <label className={`${labelClass} sm:col-span-2`}>
-            <span className={labelTextClass}>Buy It Now price (₾) — optional, must be ≥ reserve</span>
+            <span className={labelTextClass}>{t("team.buyNowPrice")}</span>
             <input
               type="number"
               value={auctionForm.buyNowPrice}
               onChange={(e) => setAuctionForm({ ...auctionForm, buyNowPrice: e.target.value })}
-              placeholder="leave blank to disable"
+              placeholder={t("team.leaveBlankToDisable")}
               className={inputClass}
             />
           </label>
           <label className={`${labelClass} sm:col-span-2`}>
-            <span className={labelTextClass}>
-              GEL per 1 USD — optional, shows a "≈ $" line on every price if set
-            </span>
+            <span className={labelTextClass}>{t("team.gelRateLabel")}</span>
             <input
               type="number"
               step="0.0001"
               value={auctionForm.gelRate}
               onChange={(e) => setAuctionForm({ ...auctionForm, gelRate: e.target.value })}
-              placeholder="e.g. 2.7000 — leave blank to hide the USD line"
+              placeholder={t("team.gelRatePlaceholder")}
               className={inputClass}
             />
           </label>
           <label className={labelClass}>
-            <span className={labelTextClass}>Starts at</span>
+            <span className={labelTextClass}>{t("team.startsAt")}</span>
             <input
               type="datetime-local"
               value={auctionForm.startsAt}
@@ -296,7 +296,7 @@ export function TeamPanelPage() {
             />
           </label>
           <label className={labelClass}>
-            <span className={labelTextClass}>Ends at</span>
+            <span className={labelTextClass}>{t("team.endsAt")}</span>
             <input
               type="datetime-local"
               value={auctionForm.endsAt}
@@ -306,29 +306,29 @@ export function TeamPanelPage() {
             />
           </label>
           <button type="submit" className={`${buttonClass} sm:col-span-2`}>
-            Create auction
+            {t("team.createAuction")}
           </button>
         </form>
         {auctionError && <p className="mt-2 text-sm text-brand">{auctionError}</p>}
         {auctionCreated && (
-          <p className="mt-2 text-sm text-live">Created auction {auctionCreated}</p>
+          <p className="mt-2 text-sm text-live">{t("team.auctionCreated", { id: auctionCreated })}</p>
         )}
       </section>
 
       <section className={sectionClass}>
-        <h3 className="font-display mb-4 text-lg font-semibold">Buyers awaiting vetting</h3>
+        <h3 className="font-display mb-4 text-lg font-semibold">{t("team.buyersAwaitingVetting")}</h3>
         {usersError && <p className="text-sm text-brand">{usersError}</p>}
         {!users ? (
-          <p className="text-sm text-ink-muted">Loading…</p>
+          <p className="text-sm text-ink-muted">{t("common.loading")}</p>
         ) : users.length === 0 ? (
-          <p className="text-sm text-ink-muted">Nobody waiting.</p>
+          <p className="text-sm text-ink-muted">{t("team.nobodyWaiting")}</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left text-ink-muted">
-                <th className="py-2 font-medium">Name</th>
-                <th className="py-2 font-medium">Email</th>
-                <th className="py-2 font-medium">Deposit</th>
+                <th className="py-2 font-medium">{t("team.colName")}</th>
+                <th className="py-2 font-medium">{t("team.colEmail")}</th>
+                <th className="py-2 font-medium">{t("team.colDeposit")}</th>
                 <th className="py-2"></th>
               </tr>
             </thead>
@@ -338,7 +338,9 @@ export function TeamPanelPage() {
                   <td className="py-2">{u.fullName}</td>
                   <td className="py-2 text-ink-muted">{u.email}</td>
                   <td className="py-2">
-                    {u.depositReceivedAt ? `${gel(u.depositAmount!)} received` : "none"}
+                    {u.depositReceivedAt
+                      ? t("team.depositReceived", { amount: gel(u.depositAmount!) })
+                      : t("team.depositNone")}
                   </td>
                   <td className="py-2 text-right">
                     {!u.depositReceivedAt && (
@@ -347,7 +349,7 @@ export function TeamPanelPage() {
                         onClick={() => handleDeposit(u.id)}
                         className="rounded border border-border px-3 py-1 text-xs font-medium hover:border-brand"
                       >
-                        Record 500 ₾ deposit
+                        {t("team.recordDeposit")}
                       </button>
                     )}
                     {u.depositReceivedAt && (
@@ -356,7 +358,7 @@ export function TeamPanelPage() {
                         onClick={() => handleEnableBidding(u.id)}
                         className="rounded bg-brand px-3 py-1 text-xs font-semibold text-white hover:bg-brand-hover"
                       >
-                        Enable bidding
+                        {t("team.enableBidding")}
                       </button>
                     )}
                   </td>

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useAuth, errorMessage } from "../AuthContext.tsx";
+import { useTranslation } from "../i18n/index.tsx";
 
 export function RegisterPage({
   onSwitchToLogin,
@@ -9,6 +10,7 @@ export function RegisterPage({
   onSuccess: () => void;
 }) {
   const { register } = useAuth();
+  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -35,13 +37,10 @@ export function RegisterPage({
         onSubmit={handleSubmit}
         className="rounded-lg border border-border bg-surface p-6 shadow-xl"
       >
-        <h2 className="font-display mb-2 text-2xl font-bold tracking-wide">Register</h2>
-        <p className="mb-6 text-sm text-ink-muted">
-          Bidding needs a 500 ₾ deposit and team approval after this — see the team once you've
-          registered.
-        </p>
+        <h2 className="font-display mb-2 text-2xl font-bold tracking-wide">{t("register.title")}</h2>
+        <p className="mb-6 text-sm text-ink-muted">{t("register.explainer")}</p>
         <label className="mb-4 block text-sm">
-          <span className="mb-1 block font-medium text-ink-muted">Full name</span>
+          <span className="mb-1 block font-medium text-ink-muted">{t("register.fullName")}</span>
           <input
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
@@ -50,7 +49,7 @@ export function RegisterPage({
           />
         </label>
         <label className="mb-4 block text-sm">
-          <span className="mb-1 block font-medium text-ink-muted">Email</span>
+          <span className="mb-1 block font-medium text-ink-muted">{t("register.email")}</span>
           <input
             type="email"
             value={email}
@@ -60,7 +59,7 @@ export function RegisterPage({
           />
         </label>
         <label className="mb-4 block text-sm">
-          <span className="mb-1 block font-medium text-ink-muted">Password</span>
+          <span className="mb-1 block font-medium text-ink-muted">{t("register.password")}</span>
           <input
             type="password"
             value={password}
@@ -76,12 +75,12 @@ export function RegisterPage({
           disabled={submitting}
           className="w-full rounded bg-brand py-2 font-semibold text-white shadow-[0_0_16px_-4px_var(--color-brand)] transition hover:bg-brand-hover disabled:opacity-50"
         >
-          {submitting ? "…" : "Register"}
+          {submitting ? "…" : t("register.submit")}
         </button>
         <p className="mt-4 text-center text-sm text-ink-muted">
-          Already registered?{" "}
+          {t("register.alreadyRegistered")}{" "}
           <button type="button" className="font-medium text-brand hover:underline" onClick={onSwitchToLogin}>
-            Log in
+            {t("register.loginLink")}
           </button>
         </p>
       </form>

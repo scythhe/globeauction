@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useAuth, errorMessage } from "../AuthContext.tsx";
+import { useTranslation } from "../i18n/index.tsx";
 
 export function LoginPage({
   onSwitchToRegister,
@@ -9,6 +10,7 @@ export function LoginPage({
   onSuccess: () => void;
 }) {
   const { login } = useAuth();
+  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -34,9 +36,9 @@ export function LoginPage({
         onSubmit={handleSubmit}
         className="rounded-lg border border-border bg-surface p-6 shadow-xl"
       >
-        <h2 className="font-display mb-6 text-2xl font-bold tracking-wide">Log in</h2>
+        <h2 className="font-display mb-6 text-2xl font-bold tracking-wide">{t("login.title")}</h2>
         <label className="mb-4 block text-sm">
-          <span className="mb-1 block font-medium text-ink-muted">Email</span>
+          <span className="mb-1 block font-medium text-ink-muted">{t("login.email")}</span>
           <input
             type="email"
             value={email}
@@ -46,7 +48,7 @@ export function LoginPage({
           />
         </label>
         <label className="mb-4 block text-sm">
-          <span className="mb-1 block font-medium text-ink-muted">Password</span>
+          <span className="mb-1 block font-medium text-ink-muted">{t("login.password")}</span>
           <input
             type="password"
             value={password}
@@ -61,12 +63,12 @@ export function LoginPage({
           disabled={submitting}
           className="w-full rounded bg-brand py-2 font-semibold text-white shadow-[0_0_16px_-4px_var(--color-brand)] transition hover:bg-brand-hover disabled:opacity-50"
         >
-          {submitting ? "…" : "Log in"}
+          {submitting ? "…" : t("login.submit")}
         </button>
         <p className="mt-4 text-center text-sm text-ink-muted">
-          No account?{" "}
+          {t("login.noAccount")}{" "}
           <button type="button" className="font-medium text-brand hover:underline" onClick={onSwitchToRegister}>
-            Register
+            {t("login.registerLink")}
           </button>
         </p>
       </form>

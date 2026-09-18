@@ -1,3 +1,5 @@
+import { useTranslation } from "../i18n/index.tsx";
+
 const STYLES: Record<string, string> = {
   live: "bg-live/15 text-live border-live/40",
   scheduled: "bg-warn/15 text-warn border-warn/40",
@@ -9,13 +11,14 @@ const STYLES: Record<string, string> = {
 };
 
 export function StatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation();
   const style = STYLES[status] ?? STYLES.unsold;
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-xs font-semibold uppercase tracking-wider ${style}`}
     >
       {status === "live" && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-live" />}
-      {status.replace("_", " ")}
+      {t(`status.${status}`)}
     </span>
   );
 }

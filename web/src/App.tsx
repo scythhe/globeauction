@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { AuthProvider, useAuth } from "./AuthContext.tsx";
+import { LanguageProvider, useTranslation } from "./i18n/index.tsx";
+import { LanguageSwitcher } from "./components/LanguageSwitcher.tsx";
 import { LoginPage } from "./pages/LoginPage.tsx";
 import { RegisterPage } from "./pages/RegisterPage.tsx";
 import { AuctionListPage } from "./pages/AuctionListPage.tsx";
@@ -15,12 +17,15 @@ type View =
 
 function Shell() {
   const { user, loading, logout } = useAuth();
+  const { t } = useTranslation();
   const [view, setView] = useState<View>({ name: "list" });
 
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-bg">
-        <span className="font-display text-lg tracking-widest text-ink-muted">LOADING…</span>
+        <span className="font-display text-lg tracking-widest text-ink-muted">
+          {t("common.loading")}
+        </span>
       </div>
     );
   }
@@ -39,13 +44,14 @@ function Shell() {
             </span>
           </button>
           <nav className="flex items-center gap-3 text-sm">
+            <LanguageSwitcher />
             {user?.role === "team" && (
               <button
                 type="button"
                 onClick={() => setView({ name: "team" })}
                 className="rounded border border-border px-3 py-1.5 font-medium text-ink-muted transition hover:border-brand hover:text-ink"
               >
-                Team panel
+                {t("nav.teamPanel")}
               </button>
             )}
             {user ? (
@@ -56,7 +62,7 @@ function Shell() {
                   onClick={logout}
                   className="rounded border border-border px-3 py-1.5 font-medium text-ink-muted transition hover:border-brand hover:text-ink"
                 >
-                  Log out
+                  {t("nav.logOut")}
                 </button>
               </>
             ) : (
@@ -66,14 +72,14 @@ function Shell() {
                   onClick={() => setView({ name: "login" })}
                   className="rounded border border-border px-3 py-1.5 font-medium text-ink-muted transition hover:border-brand hover:text-ink"
                 >
-                  Log in
+                  {t("nav.logIn")}
                 </button>
                 <button
                   type="button"
                   onClick={() => setView({ name: "register" })}
                   className="rounded bg-brand px-3 py-1.5 font-semibold text-white shadow-[0_0_16px_-4px_var(--color-brand)] transition hover:bg-brand-hover"
                 >
-                  Register
+                  {t("nav.register")}
                 </button>
               </>
             )}
@@ -111,8 +117,10 @@ function Shell() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <Shell />
-    </AuthProvider>
+    <LanguageProvider>
+      <AuthProvider>
+        <Shell />
+      </AuthProvider>
+    </LanguageProvider>
   );
 }
