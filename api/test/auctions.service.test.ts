@@ -617,3 +617,53 @@ describe("auction_events — recorded via cancel/reassignSale, read via listEven
     );
   });
 });
+
+// SQL-level cases (A/C/D restore, not-voidable, concurrency) live in
+// test/void-last-bid.test.ts. This is just the service-layer wrapping:
+// team-only guard and error-code translation.
+describe("auctions.voidLastBid — team-only, wraps known SQL errors", () => {
+  test("team-only", async () => {
+    const team = await createUser(client, { role: "team" });
+    const bidder = await createUser(client, { role: "buyer" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id);
+    await placeBid(client, auction.id, bidder.id, 2000);
+
+    await assert.rejects(
+      () => auctionsService.voidLastBid(pool, actorFor(bidder.id, "buyer"), auction.id),
+      (err: unknown) => {
+        assert.equal((err as ApiError).code, "forbidden");
+        return true;
+      },
+    );
+  });
+
+  test("bid_not_voidable maps to a clean 400", async () => {
+    const team = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id);
+    // no bids at all — nothing to void
+
+    await assert.rejects(
+      () => auctionsService.voidLastBid(pool, actorFor(team.id), auction.id),
+      (err: unknown) => {
+        assert.ok(err instanceof ApiError);
+        assert.equal(err.status, 400);
+        assert.equal(err.code, "bid_not_voidable");
+        return true;
+      },
+    );
+  });
+
+  test("happy path returns the recomputed auction", async () => {
+    const team = await createUser(client, { role: "team" });
+    const bidder = await createUser(client, { role: "buyer" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id, { startingPrice: 1000 });
+    await placeBid(client, auction.id, bidder.id, 2000);
+
+    const result = await auctionsService.voidLastBid(pool, actorFor(team.id), auction.id);
+    assert.equal(result.high_bid_id, null);
+    assert.equal(Number(result.current_price), 1000);
+  });
+});

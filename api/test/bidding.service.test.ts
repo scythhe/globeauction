@@ -64,3 +64,21 @@ describe("bidding.placeBid — ip_address/user_agent are team-only, even on your
     assert.ok(!("user_agent" in bid));
   });
 });
+
+// db/010_void_last_bid.sql's batch_id/voided_at/voided_by are internal
+// bookkeeping with no meaning to any caller via this response — stripped
+// for everyone (team included), unlike ip_address/user_agent which team
+// does get to see.
+describe("bidding.placeBid — batch_id/voided_at/voided_by never appear in the response", () => {
+  test("stripped from a buyer's own response", async () => {
+    const team = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id, { startingPrice: 1000 });
+    const bidder = await createUser(client, { role: "buyer" });
+
+    const bid = await biddingService.placeBid(pool, actorFor(bidder.id), auction.id, 1200);
+    assert.ok(!("batch_id" in bid));
+    assert.ok(!("voided_at" in bid));
+    assert.ok(!("voided_by" in bid));
+  });
+});

@@ -83,11 +83,16 @@ export async function placeBid(
     // place_bid() returns the full bids%rowtype. ip_address/user_agent are
     // team-only (BACKEND_SPEC.md §12) even on the bidder's own just-placed
     // bid — don't let them round-trip back in the API response.
+    // batch_id/voided_at/voided_by are void_last_bid() bookkeeping (db/010)
+    // with no meaning to anyone via this response — team's own view of
+    // that is GET /:id/events, not the bid itself — so they're stripped
+    // for everyone, not just non-team.
+    const { batch_id: _batchId, voided_at: _voidedAt, voided_by: _voidedBy, ...rest } = bid;
     if (actor.role !== "team") {
-      const { ip_address: _ip, user_agent: _ua, ...sanitized } = bid;
+      const { ip_address: _ip, user_agent: _ua, ...sanitized } = rest;
       return sanitized;
     }
-    return bid;
+    return rest;
   } catch (err) {
     if (isPgErrorLike(err) && KNOWN_BID_ERRORS.has(err.message)) {
       const extra = err.detail ? JSON.parse(err.detail) : {};

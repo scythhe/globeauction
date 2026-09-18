@@ -15,6 +15,8 @@ const KNOWN_BUY_NOW_ERRORS = new Set([
   "bid_limit_exceeded",
 ]);
 
+const KNOWN_VOID_ERRORS = new Set(["auction_not_live", "bid_not_voidable"]);
+
 interface PgErrorLike {
   message: string;
 }
@@ -139,6 +141,23 @@ export async function cancel(pool: Pool, actor: Actor | null, auctionId: string)
   const auction = await auctionsRepo.cancel(pool, auctionId, actor!.id);
   if (!auction) throw new ApiError(409, "cannot_cancel");
   return auction;
+}
+
+// Team-only. Erases the most recent bid on a live auction (soft-delete —
+// see db/010_void_last_bid.sql) and recomputes current_price/high_bid_id
+// from whatever's left; the bidder re-bids fresh rather than having the
+// mistaken amount corrected in place. Only covers a genuinely new bid
+// (Case A/C/D) — a mistaken ceiling raise (Case B) isn't voidable yet.
+export async function voidLastBid(pool: Pool, actor: Actor | null, auctionId: string) {
+  requireTeam(actor);
+  try {
+    return await auctionsRepo.voidLastBid(pool, auctionId, actor!.id);
+  } catch (err) {
+    if (isPgErrorLike(err) && KNOWN_VOID_ERRORS.has(err.message)) {
+      throw new ApiError(400, err.message);
+    }
+    throw err;
+  }
 }
 
 // Team-only: the recorded history of cancellations/reassignments for an

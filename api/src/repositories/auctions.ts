@@ -145,6 +145,7 @@ export async function listBids(
             ${teamColumns}
        from bids
       where auction_id = $1
+        and voided_at is null
       order by amount desc, created_at asc`,
     [auctionId, viewerId],
   );
@@ -160,6 +161,18 @@ export async function cancel(pool: Pool, auctionId: string, actorId: string): Pr
     actorId,
   ]);
   return rows[0] ?? null;
+}
+
+// void_last_bid() (db/010_void_last_bid.sql) always either raises a known
+// exception (auction_not_live, bid_not_voidable) or succeeds with a real
+// row — unlike cancel/reassignSale, there's no "zero rows means rejected"
+// case to translate here, so the exception is left to propagate.
+export async function voidLastBid(pool: Pool, auctionId: string, actorId: string): Promise<Auction> {
+  const { rows } = await pool.query<Auction>("select * from void_last_bid($1, $2) as auction", [
+    auctionId,
+    actorId,
+  ]);
+  return rows[0]!;
 }
 
 // §6: seller accept/decline on a pending_seller auction. In phase 1 the

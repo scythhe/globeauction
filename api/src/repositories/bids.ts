@@ -13,6 +13,14 @@ export interface Bid {
   // them before the response reaches a non-team actor.
   ip_address: string | null;
   user_agent: string | null;
+  // Internal bookkeeping for void_last_bid() (db/010) — not spec-covered
+  // sensitive data, but not meaningful to a bidder either; stripped the
+  // same way as ip_address/user_agent for the same reason: an interface
+  // that quietly omitted real columns is exactly how that leak happened
+  // before.
+  batch_id: string | null;
+  voided_at: Date | null;
+  voided_by: string | null;
 }
 
 // The only function that writes to `bids`, per CLAUDE.md's bidding

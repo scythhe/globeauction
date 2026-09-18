@@ -178,6 +178,14 @@ export async function placeBid(
   return rows[0];
 }
 
+export async function voidLastBid(client: Client, auctionId: string, actorId: string) {
+  const { rows } = await client.query("select * from void_last_bid($1, $2) as auction", [
+    auctionId,
+    actorId,
+  ]);
+  return rows[0];
+}
+
 export async function buyNow(
   client: Client,
   auctionId: string,

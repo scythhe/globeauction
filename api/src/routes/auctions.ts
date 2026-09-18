@@ -51,6 +51,15 @@ export function auctionsRouter(pool: Pool): Router {
     res.json(auction);
   });
 
+  // Team-only: erase the most recent bid (a mistyped max_amount) and
+  // recompute current_price/high_bid_id from what's left. See
+  // db/010_void_last_bid.sql — only covers a genuinely new bid, not a
+  // ceiling raise, and only while nothing has bid on top of it since.
+  router.post("/:id/void-last-bid", requireUuidParams("id"), async (req, res) => {
+    const auction = await auctionsService.voidLastBid(pool, req.actor, uuidParam(req, "id"));
+    res.json(auction);
+  });
+
   // §12: rate limit bidding per user — not for load, to stop a script
   // walking an opponent's ceiling up with repeated minimum bids.
   router.post("/:id/bids", requireUuidParams("id"), bidRateLimiter(), async (req, res) => {
