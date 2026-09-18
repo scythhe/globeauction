@@ -194,9 +194,10 @@ create index vehicle_photos_vehicle_idx
 -- ---------------------------------------------------------------
 -- auctions
 --
--- All money is USD, matching globmarket pricing. gel_rate is recorded
--- per auction so historical results can be shown in GEL at the rate
--- that applied at the time. Display only — never used in bid maths.
+-- All money is GEL, the working currency (BACKEND_SPEC.md §10 — revised
+-- from this table's original USD-first design). gel_rate is recorded per
+-- auction so a USD-equivalent can be shown alongside the GEL price at the
+-- rate that applied at the time. Display only — never used in bid maths.
 -- ---------------------------------------------------------------
 
 create table auctions (
@@ -210,7 +211,7 @@ create table auctions (
   current_price      numeric(12,2) not null,  -- denormalised high bid, kept by the bid function
   high_bid_id        uuid,                    -- fk added after bids table exists
 
-  gel_rate           numeric(10,4),           -- USD -> GEL, display only
+  gel_rate           numeric(10,4),           -- GEL per 1 USD, display only
 
   -- percentage the buyer pays on top of the hammer price.
   -- null until the company decides its fee model.
