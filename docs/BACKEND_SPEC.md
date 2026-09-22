@@ -357,8 +357,9 @@ there's more than one car a week to chase payment on.
 
 ## 8. Background jobs
 
-One process on the API server, running every 30 seconds. Each job uses
-`FOR UPDATE SKIP LOCKED` so a second instance doesn't double-process.
+One process on the API server, running every 1 second (originally 30s — see
+below for why that changed). Each job uses `FOR UPDATE SKIP LOCKED` so a
+second instance doesn't double-process.
 
 **Open scheduled auctions.**
 `status = 'scheduled' AND starts_at <= now()` → `live`.
@@ -366,6 +367,11 @@ One process on the API server, running every 30 seconds. Each job uses
 **Close expired auctions.**
 `status = 'live' AND ends_at <= now()`, then for each:
 - No bids → `unsold`
+- Has a high bid and `bonus_extension_used` is not yet set → grant a
+  one-time bonus round instead of closing: `ends_at = now() + soft_close_extension`,
+  `bonus_extension_used = true`. Separate mechanism from place_bid()'s own
+  per-bid soft close (§5.3) — fires on silence rather than on a bid, and
+  only ever once per auction (db/012).
 - `reserve_price` is null, or `current_price >= reserve_price` → `sold`
   (set `final_price = current_price`, `sold_to` = high bidder, `sold_at = now()`)
 - Otherwise → `pending_seller`, `seller_decision_by = now() + 48 hours`
@@ -376,8 +382,14 @@ One process on the API server, running every 30 seconds. Each job uses
 **Expire counteroffers.**
 Open counteroffers past `expires_at` → mark `accepted = false`, auction → `unsold`.
 
-30-second granularity is fine because soft close means the exact closing instant
-is never contested — the last bid already pushed the deadline out by two minutes.
+30-second granularity was originally fine because soft close means the exact
+closing instant is never contested — the last bid already pushed the deadline
+out. That reasoning doesn't hold for the bonus round above, which fires on
+*silence*: at 30s granularity a still-live auction with a winner can sit
+looking closed for up to half a minute before the bonus round revives it,
+which reads as broken rather than dramatic. Dropped to 1 second so the bonus
+round (and every other transition here) lands close to instantly — cheap at
+phase 1's volume of one lot a week.
 
 ---
 

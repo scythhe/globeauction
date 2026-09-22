@@ -260,6 +260,22 @@ describe("auctions.getById / list — reserve price redaction (§6)", () => {
     // current_price is now 1000 (starting), increment at 1000 is 100.
     assert.equal((after as { nextMinimumBid: string }).nextMinimumBid, "1100.00");
   });
+
+  // The stepper bid-entry control (web) steps by this value rather than
+  // a client-side copy of the increment table — same reasoning as
+  // nextMinimumBid above.
+  test("bidIncrement is present for every viewer and reflects bid_increment(current_price)", async () => {
+    const team = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id, { startingPrice: 1000 });
+
+    const asBuyer = await auctionsService.getById(pool, null, auction.id);
+    assert.equal((asBuyer as { bidIncrement: string }).bidIncrement, "100");
+
+    await placeBid(client, auction.id, (await createUser(client)).id, 1200);
+    const after = await auctionsService.getById(pool, null, auction.id);
+    assert.equal((after as { bidIncrement: string }).bidIncrement, "100");
+  });
 });
 
 describe("auctions.buyNow", () => {

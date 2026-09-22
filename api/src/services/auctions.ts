@@ -109,14 +109,17 @@ export async function create(pool: Pool, actor: Actor | null, input: CreateAucti
 // function itself would require, with zero risk of a client-side copy of
 // the increment table drifting out of sync.
 async function present(pool: Pool, auction: auctionsRepo.Auction, actor: Actor | null) {
-  const nextMinimumBid = await auctionsRepo.nextMinimumBid(pool, auction);
+  const [nextMinimumBid, bidIncrement] = await Promise.all([
+    auctionsRepo.nextMinimumBid(pool, auction),
+    auctionsRepo.bidIncrementFor(pool, auction),
+  ]);
   if (actor?.role === "team") {
-    return { ...auction, nextMinimumBid };
+    return { ...auction, nextMinimumBid, bidIncrement };
   }
   const { reserve_price, ...rest } = auction;
   const reserveMet =
     reserve_price === null || Number(auction.current_price) >= Number(reserve_price);
-  return { ...rest, reserveMet, nextMinimumBid };
+  return { ...rest, reserveMet, nextMinimumBid, bidIncrement };
 }
 
 export async function getById(pool: Pool, actor: Actor | null, id: string) {

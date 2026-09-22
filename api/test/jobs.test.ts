@@ -46,9 +46,12 @@ describe("auctionsRepo.closeExpiredAuctions", () => {
     });
     const bidder = await createUser(client);
     await placeBid(client, auction.id, bidder.id, 1500);
-    await client.query("update auctions set ends_at = now() - interval '1 second' where id = $1", [
-      auction.id,
-    ]);
+    // bonus_extension_used: true — this test is about the reserve-met
+    // close branch, not the db/012 bonus round, which has its own tests.
+    await client.query(
+      "update auctions set ends_at = now() - interval '1 second', bonus_extension_used = true where id = $1",
+      [auction.id],
+    );
 
     const closed = await auctionsRepo.closeExpiredAuctions(poolClient);
     assert.deepEqual(closed, [{ id: auction.id, outcome: "sold" }]);
@@ -70,9 +73,10 @@ describe("auctionsRepo.closeExpiredAuctions", () => {
     });
     const bidder = await createUser(client);
     await placeBid(client, auction.id, bidder.id, 1200);
-    await client.query("update auctions set ends_at = now() - interval '1 second' where id = $1", [
-      auction.id,
-    ]);
+    await client.query(
+      "update auctions set ends_at = now() - interval '1 second', bonus_extension_used = true where id = $1",
+      [auction.id],
+    );
 
     const closed = await auctionsRepo.closeExpiredAuctions(poolClient);
     assert.deepEqual(closed, [{ id: auction.id, outcome: "pending_seller" }]);
@@ -94,9 +98,10 @@ describe("auctionsRepo.closeExpiredAuctions", () => {
     });
     const bidder = await createUser(client);
     await placeBid(client, auction.id, bidder.id, 1000);
-    await client.query("update auctions set ends_at = now() - interval '1 second' where id = $1", [
-      auction.id,
-    ]);
+    await client.query(
+      "update auctions set ends_at = now() - interval '1 second', bonus_extension_used = true where id = $1",
+      [auction.id],
+    );
 
     const closed = await auctionsRepo.closeExpiredAuctions(poolClient);
     assert.deepEqual(closed, [{ id: auction.id, outcome: "sold" }]);
@@ -112,5 +117,78 @@ describe("auctionsRepo.closeExpiredAuctions", () => {
 
     const closed = await auctionsRepo.closeExpiredAuctions(poolClient);
     assert.deepEqual(closed, [{ id: auction.id, outcome: "unsold" }]);
+  });
+
+  // db/012: a separate, one-time mechanic from place_bid()'s own per-bid
+  // soft close. First quiet close with a winner in place grants a single
+  // bonus round instead of closing; the second quiet close (bonus already
+  // spent) closes for real.
+  test("winner in place, bonus not yet used: grants one bonus round instead of closing", async () => {
+    const owner = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, owner.id);
+    const auction = await createAuction(client, vehicle.id, owner.id, {
+      startingPrice: 1000,
+      reservePrice: 1000,
+    });
+    const bidder = await createUser(client);
+    await placeBid(client, auction.id, bidder.id, 1500);
+    await client.query("update auctions set ends_at = now() - interval '1 second' where id = $1", [
+      auction.id,
+    ]);
+
+    const result = await auctionsRepo.closeExpiredAuctions(poolClient);
+    assert.deepEqual(result, [{ id: auction.id, outcome: "extended" }]);
+
+    const { rows } = await client.query(
+      "select status, ends_at, bonus_extension_used from auctions where id = $1",
+      [auction.id],
+    );
+    assert.equal(rows[0]!.status, "live");
+    assert.equal(rows[0]!.bonus_extension_used, true);
+    assert.ok(new Date(rows[0]!.ends_at).getTime() > Date.now());
+  });
+
+  test("bonus already used: second quiet close closes for real", async () => {
+    const owner = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, owner.id);
+    const auction = await createAuction(client, vehicle.id, owner.id, {
+      startingPrice: 1000,
+      reservePrice: 1000,
+    });
+    const bidder = await createUser(client);
+    await placeBid(client, auction.id, bidder.id, 1500);
+    await client.query(
+      "update auctions set ends_at = now() - interval '1 second', bonus_extension_used = true where id = $1",
+      [auction.id],
+    );
+
+    const result = await auctionsRepo.closeExpiredAuctions(poolClient);
+    assert.deepEqual(result, [{ id: auction.id, outcome: "sold" }]);
+
+    const { rows } = await client.query("select status from auctions where id = $1", [auction.id]);
+    assert.equal(rows[0]!.status, "sold");
+  });
+
+  test("bonus round does not apply twice in the same job pass", async () => {
+    const owner = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, owner.id);
+    const auction = await createAuction(client, vehicle.id, owner.id, {
+      startingPrice: 1000,
+      reservePrice: 1000,
+    });
+    const bidder = await createUser(client);
+    await placeBid(client, auction.id, bidder.id, 1500);
+    await client.query("update auctions set ends_at = now() - interval '1 second' where id = $1", [
+      auction.id,
+    ]);
+
+    const first = await auctionsRepo.closeExpiredAuctions(poolClient);
+    assert.deepEqual(first, [{ id: auction.id, outcome: "extended" }]);
+
+    // Bonus was granted with a fresh ends_at in the future, so a second
+    // pass right now must not find it a candidate at all — not "already
+    // extended," genuinely not due to close yet.
+    const second = await auctionsRepo.closeExpiredAuctions(poolClient);
+    assert.deepEqual(second, []);
   });
 });

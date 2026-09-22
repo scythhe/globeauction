@@ -102,7 +102,8 @@ export async function createAuction(
     reservePrice: number | null;
     startsAt: Date;
     endsAt: Date;
-    softCloseWindow: string;
+    softCloseTrigger: string;
+    softCloseExtension: string;
     buyNowPrice: number | null;
   }> = {},
 ): Promise<AuctionFixture> {
@@ -110,16 +111,27 @@ export async function createAuction(
   const reservePrice = overrides.reservePrice === undefined ? startingPrice : overrides.reservePrice;
   const startsAt = overrides.startsAt ?? new Date(Date.now() - 60_000);
   const endsAt = overrides.endsAt ?? new Date(Date.now() + 60 * 60_000);
-  const softCloseWindow = overrides.softCloseWindow ?? "2 minutes";
+  const softCloseTrigger = overrides.softCloseTrigger ?? "5 minutes";
+  const softCloseExtension = overrides.softCloseExtension ?? "15 seconds";
   const buyNowPrice = overrides.buyNowPrice ?? null;
 
   const { rows } = await client.query(
     `insert into auctions
        (vehicle_id, created_by, status, starting_price, reserve_price,
-        current_price, starts_at, ends_at, soft_close_window, buy_now_price)
-     values ($1, $2, 'live', $3, $4, $3, $5, $6, $7::interval, $8)
+        current_price, starts_at, ends_at, soft_close_trigger, soft_close_extension, buy_now_price)
+     values ($1, $2, 'live', $3, $4, $3, $5, $6, $7::interval, $8::interval, $9)
      returning id`,
-    [vehicleId, createdBy, startingPrice, reservePrice, startsAt, endsAt, softCloseWindow, buyNowPrice],
+    [
+      vehicleId,
+      createdBy,
+      startingPrice,
+      reservePrice,
+      startsAt,
+      endsAt,
+      softCloseTrigger,
+      softCloseExtension,
+      buyNowPrice,
+    ],
   );
   return rows[0];
 }

@@ -406,12 +406,13 @@ describe("place_bid — validation", () => {
 });
 
 describe("place_bid — soft close", () => {
-  test("extends ends_at when a bid lands inside the soft-close window", async () => {
+  test("extends ends_at when remaining time is less than the extension", async () => {
     const owner = await createUser(client, { role: "team" });
     const vehicle = await createVehicle(client, owner.id);
     const auction = await createAuction(client, vehicle.id, owner.id, {
-      endsAt: new Date(Date.now() + 30_000), // 30s left, inside the 2-minute window
-      softCloseWindow: "2 minutes",
+      endsAt: new Date(Date.now() + 5_000), // 5s left, less than the 15s extension
+      softCloseTrigger: "5 minutes",
+      softCloseExtension: "15 seconds",
     });
     const bidder = await createUser(client);
 
@@ -423,17 +424,62 @@ describe("place_bid — soft close", () => {
       new Date(after.ends_at).getTime() > new Date(before.ends_at).getTime(),
       "ends_at should have moved forward",
     );
-    const extension = new Date(after.ends_at).getTime() - Date.now();
-    assert.ok(extension > 100_000, "should be extended to roughly a full soft-close window out");
   });
 
-  test("does not shorten ends_at when the bid lands outside the window", async () => {
+  // The whole point of splitting soft_close_window into a trigger and an
+  // extension: a contested auction shouldn't balloon by another full
+  // 5-minute trigger window every time someone bids in the last few
+  // minutes — it should get pushed out by the much shorter extension
+  // instead. Written to catch a regression back to "one value does both
+  // jobs" (found by review, not a pentest — see db/011).
+  test("extends by soft_close_extension, not by soft_close_trigger", async () => {
+    const owner = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, owner.id);
+    const auction = await createAuction(client, vehicle.id, owner.id, {
+      endsAt: new Date(Date.now() + 5_000),
+      softCloseTrigger: "5 minutes",
+      softCloseExtension: "15 seconds",
+    });
+    const bidder = await createUser(client);
+
+    const beforeCall = Date.now();
+    await placeBid(client, auction.id, bidder.id, 1500);
+    const after = await getAuction(client, auction.id);
+
+    const extension = new Date(after.ends_at).getTime() - beforeCall;
+    assert.ok(extension < 60_000, "must be extended by ~15s (the extension), not ~5min (the trigger)");
+    assert.ok(extension > 5_000, "sanity: still meaningfully extended, not left alone");
+  });
+
+  // The actual bug the GREATEST fix (db/011) covers: a bid landing inside
+  // the 5-minute trigger window but with *more* time left than the 15s
+  // extension would provide must not have its deadline pulled backward
+  // to a bare "now + extension."
+  test("does not move ends_at when remaining time already exceeds the extension", async () => {
+    const owner = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, owner.id);
+    const farerEnd = new Date(Date.now() + 30_000); // 30s left: inside the 5-min trigger, but > the 15s extension
+    const auction = await createAuction(client, vehicle.id, owner.id, {
+      endsAt: farerEnd,
+      softCloseTrigger: "5 minutes",
+      softCloseExtension: "15 seconds",
+    });
+    const bidder = await createUser(client);
+
+    await placeBid(client, auction.id, bidder.id, 1500);
+    const after = await getAuction(client, auction.id);
+
+    assert.equal(new Date(after.ends_at).getTime(), farerEnd.getTime());
+  });
+
+  test("does not shorten ends_at when the bid lands outside the trigger window", async () => {
     const owner = await createUser(client, { role: "team" });
     const vehicle = await createVehicle(client, owner.id);
     const farEnd = new Date(Date.now() + 60 * 60_000);
     const auction = await createAuction(client, vehicle.id, owner.id, {
       endsAt: farEnd,
-      softCloseWindow: "2 minutes",
+      softCloseTrigger: "5 minutes",
+      softCloseExtension: "15 seconds",
     });
     const bidder = await createUser(client);
 
@@ -441,6 +487,29 @@ describe("place_bid — soft close", () => {
     const after = await getAuction(client, auction.id);
 
     assert.equal(new Date(after.ends_at).getTime(), farEnd.getTime());
+  });
+
+  test("extension is repeatable — a second bid inside the (renewed) window extends again", async () => {
+    const owner = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, owner.id);
+    const auction = await createAuction(client, vehicle.id, owner.id, {
+      endsAt: new Date(Date.now() + 10_000),
+      softCloseTrigger: "5 minutes",
+      softCloseExtension: "15 seconds",
+    });
+    const alice = await createUser(client);
+    const bob = await createUser(client);
+
+    await placeBid(client, auction.id, alice.id, 1500);
+    const afterFirst = await getAuction(client, auction.id);
+
+    await placeBid(client, auction.id, bob.id, 2000);
+    const afterSecond = await getAuction(client, auction.id);
+
+    assert.ok(
+      new Date(afterSecond.ends_at).getTime() > new Date(afterFirst.ends_at).getTime(),
+      "the second bid must extend again, not just once",
+    );
   });
 });
 

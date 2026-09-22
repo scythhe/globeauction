@@ -3,9 +3,11 @@ import * as auctionsRepo from "../repositories/auctions.ts";
 import { runNotificationSweep } from "../notifications/service.ts";
 import { consoleMailer, type Mailer } from "../notifications/mailer.ts";
 
-// §8: one process on the API server, running every 30 seconds. Each
-// underlying query uses FOR UPDATE SKIP LOCKED so a second instance of
-// this job (e.g. two API processes) doesn't double-process a row.
+// §8: one process on the API server. Originally every 30 seconds; now 1s
+// (set in index.ts) so the db/012 bonus round fires close to instantly
+// instead of leaving a still-live auction visibly "ended" for up to 30s.
+// Each underlying query uses FOR UPDATE SKIP LOCKED so a second instance
+// of this job (e.g. two API processes) doesn't double-process a row.
 export async function runOnce(pool: Pool, mailer: Mailer = consoleMailer): Promise<void> {
   const client = await pool.connect();
   try {
@@ -25,7 +27,13 @@ export async function runOnce(pool: Pool, mailer: Mailer = consoleMailer): Promi
     await closeClient.query("begin");
     const closed = await auctionsRepo.closeExpiredAuctions(closeClient);
     await closeClient.query("commit");
-    for (const c of closed) console.log(`jobs: auction ${c.id} closed -> ${c.outcome}`);
+    for (const c of closed) {
+      if (c.outcome === "extended") {
+        console.log(`jobs: auction ${c.id} granted one-time bonus overtime`);
+      } else {
+        console.log(`jobs: auction ${c.id} closed -> ${c.outcome}`);
+      }
+    }
   } catch (err) {
     await closeClient.query("rollback");
     console.error("jobs: close-expired failed", err);

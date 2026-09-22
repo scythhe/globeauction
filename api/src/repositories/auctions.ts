@@ -25,9 +25,16 @@ export interface Auction {
   sold_at: Date | null;
   starts_at: Date;
   ends_at: Date;
-  soft_close_window: string;
+  soft_close_trigger: string;
+  soft_close_extension: string;
   seller_decision_by: Date | null;
   buy_now_price: string | null;
+  // void_last_bid() (db/010) bookkeeping — not sensitive, but the
+  // interface should say what's actually on the row rather than omit it.
+  last_bid_batch_id: string | null;
+  // One-time bonus overtime (db/012) — has this auction already spent its
+  // single free extension at close time? Closing-job bookkeeping only.
+  bonus_extension_used: boolean;
 }
 
 export interface NewAuctionInput {
@@ -74,6 +81,17 @@ export async function nextMinimumBid(pool: Pool, auction: Auction): Promise<stri
     [auction.id],
   );
   return rows[0]!.minimum;
+}
+
+// Same reasoning as nextMinimumBid: the stepper bid-entry control needs
+// its step size to be exactly what place_bid() will actually require for
+// the next increment, not a client-side copy of the increment table.
+export async function bidIncrementFor(pool: Pool, auction: Auction): Promise<string> {
+  const { rows } = await pool.query<{ increment: string }>(
+    "select bid_increment($1)::text as increment",
+    [auction.current_price],
+  );
+  return rows[0]!.increment;
 }
 
 export async function buyNow(
@@ -241,7 +259,7 @@ export async function openScheduledAuctions(client: PoolClient): Promise<number>
 
 export interface ClosedAuction {
   id: string;
-  outcome: "unsold" | "sold" | "pending_seller";
+  outcome: "unsold" | "sold" | "pending_seller" | "extended";
 }
 
 export async function closeExpiredAuctions(client: PoolClient): Promise<ClosedAuction[]> {
@@ -261,6 +279,25 @@ export async function closeExpiredAuctions(client: PoolClient): Promise<ClosedAu
     if (!auction.high_bid_id) {
       await client.query("update auctions set status = 'unsold' where id = $1", [auction.id]);
       closed.push({ id: auction.id, outcome: "unsold" });
+      continue;
+    }
+
+    // One-time bonus overtime (db/012): separate from place_bid()'s own
+    // per-bid soft close. The first time an auction with a winner reaches
+    // this job with nothing having pushed ends_at further, give it one
+    // more soft_close_extension from right now instead of closing — a
+    // single free "anyone else?" round. bonus_extension_used then makes
+    // sure it can only ever happen once; the second quiet close proceeds
+    // normally below.
+    if (!auction.bonus_extension_used) {
+      await client.query(
+        `update auctions
+            set ends_at = now() + soft_close_extension,
+                bonus_extension_used = true
+          where id = $1`,
+        [auction.id],
+      );
+      closed.push({ id: auction.id, outcome: "extended" });
       continue;
     }
 
