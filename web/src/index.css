@@ -27,3 +27,50 @@
     font-family: var(--font-sans);
   }
 }
+
+/* Excitement pass: a dramatic countdown in the final stretch and a
+   scoreboard-style flash whenever the current price changes. Plain CSS
+   keyframes, not a library — this project doesn't pull in animation
+   dependencies for effects this size. */
+@layer utilities {
+  @keyframes heartbeat {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.08); }
+  }
+  .animate-heartbeat {
+    animation: heartbeat 1s ease-in-out infinite;
+  }
+
+  @keyframes glow-pulse {
+    0%, 100% { text-shadow: 0 0 0px transparent; }
+    50% { text-shadow: 0 0 16px var(--color-brand); }
+  }
+  .animate-glow-pulse {
+    animation: glow-pulse 1s ease-in-out infinite;
+  }
+
+  @keyframes price-flash {
+    0% { background-color: color-mix(in srgb, var(--color-live) 35%, transparent); }
+    100% { background-color: transparent; }
+  }
+  .animate-price-flash {
+    animation: price-flash 800ms ease-out;
+  }
+
+  @keyframes price-flash-down {
+    0% { background-color: color-mix(in srgb, var(--color-brand) 35%, transparent); }
+    100% { background-color: transparent; }
+  }
+  .animate-price-flash-down {
+    animation: price-flash-down 800ms ease-out;
+  }
+
+  @keyframes win-pop {
+    0% { opacity: 0; transform: scale(0.9); }
+    60% { opacity: 1; transform: scale(1.03); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  .animate-win-pop {
+    animation: win-pop 420ms ease-out;
+  }
+}

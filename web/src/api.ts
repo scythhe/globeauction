@@ -75,13 +75,16 @@ export interface Auction {
   reserve_price?: string; // present for team only
   reserveMet?: boolean; // present for everyone else
   nextMinimumBid: string;
+  bidIncrement: string;
   buy_now_price: string | null;
   high_bid_id: string | null;
   starts_at: string;
   ends_at: string;
-  soft_close_window: string;
+  soft_close_trigger: string;
+  soft_close_extension: string;
   final_price: string | null;
   sold_to: string | null;
+  bonus_extension_used: boolean;
 }
 
 export interface Vehicle {

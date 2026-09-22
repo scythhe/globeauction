@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, type Auction, type Bid, type Vehicle, type VehiclePhoto } from "../api.ts";
 import { useAuth, errorMessage } from "../AuthContext.tsx";
 import { StatusBadge } from "../components/StatusBadge.tsx";
 import { CountdownTimer } from "../components/CountdownTimer.tsx";
+import { AnimatedPrice } from "../components/AnimatedPrice.tsx";
 import { CarIcon, FuelIcon, GaugeIcon, GearIcon } from "../components/icons.tsx";
-import { gel, usdEquivalent } from "../format.ts";
+import { addGel, gel, subtractGel, usdEquivalent } from "../format.ts";
 import { usePolling } from "../usePolling.ts";
 import { useTranslation } from "../i18n/index.tsx";
 
@@ -22,7 +23,21 @@ export function AuctionDetailPage({
   const [photos, setPhotos] = useState<VehiclePhoto[]>([]);
   const [activePhoto, setActivePhoto] = useState(0);
   const [bids, setBids] = useState<Bid[]>([]);
-  const [maxAmount, setMaxAmount] = useState("");
+  // The amount the stepper below is currently set to — not free-typed.
+  // Copart's own bid entry works the same way (confirmed against real
+  // screenshots, not assumed): stepping by the increment is what actually
+  // prevents the fat-finger-typo class of mistake void-last-bid exists to
+  // clean up after, not just a validation message after the fact.
+  const [stepperValue, setStepperValue] = useState<string | null>(null);
+  // Monster Bid — Copart's real term: type an exact amount and jump
+  // straight to it, bypassing the stepper's increment-only entry. Same
+  // POST /bids endpoint as Quick Bid underneath (same validation, same
+  // bid_limit, same void-last-bid eligibility) — the only thing that's
+  // actually different is this UI lets you type a number instead of
+  // stepping to it, plus a stronger confirmation since it's a bigger,
+  // more deliberate jump.
+  const [monsterBidOpen, setMonsterBidOpen] = useState(false);
+  const [monsterBidValue, setMonsterBidValue] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -55,6 +70,21 @@ export function AuctionDetailPage({
   // live, without touching place_bid() at all.
   usePolling(load, 3000, auction?.status === "live");
 
+  // Keeps the stepper's floor in sync with the live minimum. Only ever
+  // moves it *up* — if someone else's bid raises nextMinimumBid past
+  // wherever the stepper currently sits, that number is no longer a valid
+  // bid, so it has to follow; but if the bidder has already dialed the
+  // stepper above the new minimum, leave their choice alone rather than
+  // resetting it back down on every 3-second poll.
+  useEffect(() => {
+    if (!auction) return;
+    setStepperValue((current) =>
+      current === null || Number(current) < Number(auction.nextMinimumBid)
+        ? auction.nextMinimumBid
+        : current,
+    );
+  }, [auction?.nextMinimumBid]);
+
   // amount stays a string end-to-end: the backend validates and stores it
   // as Postgres `numeric` directly, and round-tripping it through a JS
   // number here first could misrepresent the exact figure the user typed
@@ -64,7 +94,6 @@ export function AuctionDetailPage({
     setSubmitting(true);
     try {
       await api.post<Bid>(`/auctions/${auctionId}/bids`, { max_amount: amount });
-      setMaxAmount("");
     } catch (err) {
       // Only the POST itself failing means the bid didn't happen. Anything
       // that goes wrong after this point (refreshing the displayed state)
@@ -87,16 +116,31 @@ export function AuctionDetailPage({
     setSubmitting(false);
   }
 
-  async function handleMaxBidSubmit(e: FormEvent) {
-    e.preventDefault();
-    const trimmed = maxAmount.trim();
-    // Client-side check only, for immediate feedback — Number() here never
-    // touches the value actually sent; the trimmed string goes to the API as-is.
+  function stepUp() {
+    if (!auction || stepperValue === null) return;
+    setStepperValue(addGel(stepperValue, auction.bidIncrement));
+  }
+
+  function stepDown() {
+    if (!auction || stepperValue === null) return;
+    const next = subtractGel(stepperValue, auction.bidIncrement);
+    // Never below the actual minimum place_bid() will accept.
+    setStepperValue(Number(next) < Number(auction.nextMinimumBid) ? auction.nextMinimumBid : next);
+  }
+
+  async function handleMonsterBid() {
+    const trimmed = monsterBidValue.trim();
+    // Client-side check only, for immediate feedback — the actual
+    // validation (shape, minimum, bid_limit) is the server's, same as
+    // every other bid path.
     if (!Number.isFinite(Number(trimmed)) || Number(trimmed) <= 0 || trimmed === "") {
       setActionError(t("detail.enterValidAmount"));
       return;
     }
+    if (!confirm(t("detail.monsterBidConfirm", { amount: gel(trimmed) }))) return;
     await submitBid(trimmed);
+    setMonsterBidValue("");
+    setMonsterBidOpen(false);
   }
 
   async function handleBuyNow() {
@@ -239,47 +283,6 @@ export function AuctionDetailPage({
             )}
           </div>
 
-          <div className="mt-6">
-            <h2 className="font-display mb-2 text-lg font-semibold">{t("detail.bidHistory")}</h2>
-            {bids.length === 0 ? (
-              <p className="text-sm text-ink-muted">{t("detail.noBidsYet")}</p>
-            ) : (
-              <ul className="divide-y divide-border rounded border border-border">
-                {bids
-                  // The API sorts by amount desc (a "current standings"
-                  // order, not chronological) — this was blindly
-                  // .reverse()'d before, which produced a scrambled order
-                  // whenever amounts didn't already match insertion order.
-                  // Sort by time explicitly for a real bid-war history feed.
-                  .slice()
-                  .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-                  .map((b) => {
-                    const isLeading = b.id === auction.high_bid_id;
-                    const isMine = b.bidder_id === user?.id;
-                    return (
-                      <li
-                        key={b.id}
-                        className={`flex items-center justify-between px-3 py-2 text-sm ${
-                          isLeading ? "bg-live/10" : ""
-                        }`}
-                      >
-                        <span className="font-medium">
-                          {gel(b.amount)}
-                          {isLeading && (
-                            <span className="ml-2 rounded bg-live/20 px-1.5 py-0.5 text-xs font-semibold uppercase text-live">
-                              {t("detail.leading")}
-                            </span>
-                          )}
-                          {isMine && <span className="ml-2 text-xs text-ink-faint">{t("detail.you")}</span>}
-                          {b.is_proxy && <span className="ml-2 text-xs text-ink-faint">{t("detail.proxy")}</span>}
-                        </span>
-                        <span className="text-ink-faint">{new Date(b.created_at).toLocaleTimeString()}</span>
-                      </li>
-                    );
-                  })}
-              </ul>
-            )}
-          </div>
         </div>
 
         {/* Bid panel */}
@@ -287,12 +290,17 @@ export function AuctionDetailPage({
           <div className="sticky top-20 rounded-lg border border-border bg-surface p-5 shadow-xl">
             <div className="mb-3 flex items-center justify-between">
               <StatusBadge status={auction.status} />
-              <CountdownTimer endsAt={auction.ends_at} live={isLive} />
+              <CountdownTimer
+                endsAt={auction.ends_at}
+                live={isLive}
+                bonusExtensionUsed={auction.bonus_extension_used}
+                softCloseExtension={auction.soft_close_extension}
+              />
             </div>
 
             <div className="mb-1 text-xs uppercase tracking-wide text-ink-muted">{t("detail.currentBid")}</div>
             <div className="font-display text-4xl font-bold text-brand">
-              {gel(auction.current_price)}
+              <AnimatedPrice value={auction.current_price} />
             </div>
             {usdEquivalent(auction.current_price, auction.gel_rate) && (
               <div className="mb-1 text-sm text-ink-faint">
@@ -329,6 +337,16 @@ export function AuctionDetailPage({
               </div>
             )}
 
+            {/* Minimalistic on purpose — a single beat, not a full
+                celebration screen — but it has to actually say "won,"
+                not just leave the win to be inferred from the status
+                badge like everything else here. */}
+            {auction.status === "sold" && auction.sold_to === user?.id && (
+              <div className="animate-win-pop mb-3 rounded-lg border border-live bg-live/10 px-4 py-3 text-center">
+                <div className="font-display text-2xl font-bold text-live">{t("detail.won")}</div>
+              </div>
+            )}
+
             {auction.status === "sold" && (
               <p className="mb-3 text-sm text-ink-muted">
                 {t("detail.soldFor")}{" "}
@@ -349,41 +367,89 @@ export function AuctionDetailPage({
               </button>
             )}
 
-            {isLive && canBid && user?.canBid && (
+            {isLive && canBid && user?.canBid && stepperValue !== null && (
               <div>
                 {/* Max Bid — Copart's own term for proxy bidding: you name
                     the most you'll pay, the system bids for you, only as
-                    much as needed to stay ahead, up to that number. */}
+                    much as needed to stay ahead, up to that number.
+                    Stepped by the increment, not typed — verified against
+                    Copart's own bid entry (no free-text amount field
+                    there either), and it's what actually prevents the
+                    fat-finger-typo class of mistake at entry time, rather
+                    than just catching it after with void-last-bid. */}
                 <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
                   {t("detail.maxBidLabel")}
                 </label>
                 <p className="mb-2 text-xs text-ink-faint">{t("detail.maxBidExplainer")}</p>
-                <form onSubmit={handleMaxBidSubmit} className="flex gap-2">
-                  <input
-                    type="number"
-                    value={maxAmount}
-                    onChange={(e) => setMaxAmount(e.target.value)}
-                    placeholder={t("detail.minPlaceholder", { amount: auction.nextMinimumBid })}
-                    min={0}
-                    className="w-full rounded border border-border bg-bg px-3 py-2 text-ink outline-none focus:border-brand"
-                  />
+                <div className="flex items-stretch gap-2">
+                  <div className="flex items-center rounded border border-border bg-bg">
+                    <button
+                      type="button"
+                      onClick={stepDown}
+                      disabled={submitting || stepperValue === auction.nextMinimumBid}
+                      aria-label={t("detail.stepDown")}
+                      className="px-3 py-2 text-lg font-bold text-ink-muted transition hover:text-ink disabled:opacity-30"
+                    >
+                      −
+                    </button>
+                    <span className="min-w-[7ch] flex-1 px-1 text-center font-mono text-ink">
+                      {gel(stepperValue)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={stepUp}
+                      disabled={submitting}
+                      aria-label={t("detail.stepUp")}
+                      className="px-3 py-2 text-lg font-bold text-ink-muted transition hover:text-ink disabled:opacity-30"
+                    >
+                      +
+                    </button>
+                  </div>
                   <button
-                    type="submit"
+                    type="button"
+                    onClick={() => submitBid(stepperValue)}
                     disabled={submitting}
                     className="shrink-0 rounded bg-brand px-4 py-2 text-sm font-bold text-white shadow-[0_0_16px_-4px_var(--color-brand)] transition hover:bg-brand-hover disabled:opacity-50"
                   >
                     {t("detail.placeMaxBid")}
                   </button>
-                </form>
+                </div>
 
-                <button
-                  type="button"
-                  disabled={submitting}
-                  onClick={() => submitBid(auction.nextMinimumBid)}
-                  className="mt-2 w-full rounded border border-border py-2 text-sm font-medium text-ink-muted transition hover:border-brand hover:text-ink disabled:opacity-50"
-                >
-                  {t("detail.quickBid", { amount: gel(auction.nextMinimumBid) })}
-                </button>
+                {/* Monster Bid — a deliberately lower-key entry point than
+                    Quick Bid, matching Copart's own treatment of it as a
+                    power feature, not the default path. */}
+                {monsterBidOpen ? (
+                  <div className="mt-3 rounded border border-border p-3">
+                    <p className="mb-2 text-xs text-ink-faint">{t("detail.monsterBidExplainer")}</p>
+                    <div className="flex gap-2">
+                      <input
+                        type="number"
+                        value={monsterBidValue}
+                        onChange={(e) => setMonsterBidValue(e.target.value)}
+                        placeholder={t("detail.monsterBidPlaceholder")}
+                        min={0}
+                        className="w-full rounded border border-border bg-bg px-3 py-2 text-ink outline-none focus:border-brand"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleMonsterBid}
+                        disabled={submitting}
+                        className="shrink-0 rounded border border-brand px-3 py-2 text-sm font-bold text-brand transition hover:bg-brand hover:text-white disabled:opacity-50"
+                      >
+                        {t("detail.monsterBidSubmit")}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setMonsterBidOpen(true)}
+                    disabled={submitting}
+                    className="mt-2 text-xs font-medium text-ink-faint underline decoration-dotted transition hover:text-ink-muted"
+                  >
+                    {t("detail.monsterBidToggle")}
+                  </button>
+                )}
               </div>
             )}
 

@@ -47,11 +47,6 @@ export const dict: Record<string, Entry> = {
   // --- auction detail ---
   "detail.back": { ka: "← უკან აუქციონებზე", en: "← back to auctions", ru: "← назад к аукционам" },
   "detail.noPhotosYet": { ka: "ფოტოები ჯერ არ არის", en: "No photos yet", ru: "Фотографий пока нет" },
-  "detail.bidHistory": { ka: "ბიდების ისტორია", en: "Bid history", ru: "История ставок" },
-  "detail.noBidsYet": { ka: "ბიდები ჯერ არ არის.", en: "No bids yet.", ru: "Ставок пока нет." },
-  "detail.leading": { ka: "ლიდერობს", en: "Leading", ru: "Лидирует" },
-  "detail.you": { ka: "(თქვენ)", en: "(you)", ru: "(вы)" },
-  "detail.proxy": { ka: "პროქსი", en: "proxy", ru: "прокси" },
   "detail.currentBid": { ka: "მიმდინარე ფასი", en: "Current bid", ru: "Текущая ставка" },
   "detail.winning": { ka: "თქვენ ლიდერობთ", en: "You're winning", ru: "Вы лидируете" },
   "detail.outbid": { ka: "თქვენი ბიდი გადაჭარბებულია", en: "Outbid", ru: "Вас перебили" },
@@ -71,10 +66,24 @@ export const dict: Record<string, Entry> = {
     en: "Enter the most you're willing to pay. We bid on your behalf automatically, raising only as far as needed to keep you in the lead — never past this number.",
     ru: "Укажите максимальную сумму, которую готовы заплатить. Мы будем делать ставки за вас автоматически, повышая ровно настолько, насколько нужно, чтобы удержать лидерство — никогда не больше этой суммы.",
   },
-  "detail.minPlaceholder": { ka: "მინიმუმ {amount}", en: "min {amount}", ru: "мин. {amount}" },
-  "detail.placeMaxBid": { ka: "მაქსიმალური ბიდის დადება", en: "Place Max Bid", ru: "Сделать ставку" },
-  "detail.quickBid": { ka: "სწრაფი ბიდი — მინიმალური თანხის დადება ({amount}) ახლავე", en: "Quick Bid — bid the minimum ({amount}) right now", ru: "Быстрая ставка — минимальная сумма ({amount}) прямо сейчас" },
+  "detail.placeMaxBid": { ka: "სწრაფი ბიდი", en: "Quick Bid", ru: "Быстрая ставка" },
+  "detail.monsterBidToggle": { ka: "მონსტრ-ბიდი", en: "Monster Bid", ru: "Монстр-ставка" },
+  "detail.monsterBidExplainer": {
+    ka: "შეიყვანეთ ზუსტი თანხა და დაუყოვნებლივ გადადით მასზე — საფეხურების გვერდის ავლით. ეს დიდი, გადაწყვეტილი ნაბიჯია.",
+    en: "Enter an exact amount and jump straight to it — bypassing the increment steps. A big, deliberate move.",
+    ru: "Введите точную сумму и сразу перейдите к ней — в обход шагов увеличения. Крупный, обдуманный шаг.",
+  },
+  "detail.monsterBidPlaceholder": { ka: "შეიყვანეთ თანხა", en: "Enter amount", ru: "Введите сумму" },
+  "detail.monsterBidConfirm": {
+    ka: "მონსტრ-ბიდი {amount}-ზე? ეს დაუყოვნებლივ დააყენებს ფასს ამ დონეზე.",
+    en: "Monster Bid of {amount}? This immediately sets the price to that level.",
+    ru: "Монстр-ставка {amount}? Это сразу установит цену на этом уровне.",
+  },
+  "detail.monsterBidSubmit": { ka: "დადასტურება", en: "Confirm", ru: "Подтвердить" },
   "detail.enterValidAmount": { ka: "შეიყვანეთ სწორი თანხა", en: "Enter a valid amount", ru: "Введите корректную сумму" },
+  "detail.won": { ka: "თქვენ მოიგეთ!", en: "You won!", ru: "Вы выиграли!" },
+  "detail.stepDown": { ka: "თანხის შემცირება", en: "Decrease amount", ru: "Уменьшить сумму" },
+  "detail.stepUp": { ka: "თანხის გაზრდა", en: "Increase amount", ru: "Увеличить сумму" },
   "detail.tooLowMinimum": { ka: "თანხა ძალიან დაბალია — მინიმუმია {amount} ₾", en: "Too low — minimum is {amount} ₾", ru: "Слишком низкая ставка — минимум {amount} ₾" },
   "detail.biddingNotEnabled": {
     ka: "ბიდინგი თქვენს ანგარიშზე ჯერ არ არის ჩართული — დაუკავშირდით გუნდს.",
@@ -123,6 +132,7 @@ export const dict: Record<string, Entry> = {
   // --- countdown ---
   "countdown.ended": { ka: "დასრულდა", en: "Ended", ru: "Завершён" },
   "countdown.extended": { ka: "გახანგრძლივდა", en: "Extended", ru: "Продлён" },
+  "countdown.bonusTime": { ka: "ბონუს დრო!", en: "Bonus time!", ru: "Бонусное время!" },
 
   // --- login ---
   "login.title": { ka: "შესვლა", en: "Log in", ru: "Вход" },

@@ -3,6 +3,8 @@ import { api, type Auction, type Vehicle, type VehiclePhoto } from "../api.ts";
 import { errorMessage } from "../AuthContext.tsx";
 import { StatusBadge } from "../components/StatusBadge.tsx";
 import { CarIcon, ClockIcon, HammerIcon, ShieldCheckIcon } from "../components/icons.tsx";
+import { AnimatedPrice } from "../components/AnimatedPrice.tsx";
+import { CountdownTimer } from "../components/CountdownTimer.tsx";
 import { gel, usdEquivalent } from "../format.ts";
 import { usePolling } from "../usePolling.ts";
 import { useTranslation } from "../i18n/index.tsx";
@@ -93,6 +95,17 @@ export function AuctionListPage({ onSelect }: { onSelect: (auctionId: string) =>
                     {t("list.buyNowBadge")}
                   </div>
                 )}
+                {auction.status === "live" && (
+                  <div className="absolute bottom-2 right-2 rounded bg-black/70 px-2 py-1">
+                    <CountdownTimer
+                      endsAt={auction.ends_at}
+                      live
+                      size="sm"
+                      bonusExtensionUsed={auction.bonus_extension_used}
+                      softCloseExtension={auction.soft_close_extension}
+                    />
+                  </div>
+                )}
               </div>
               <div className="p-4">
                 <h3 className="font-display truncate text-lg font-semibold text-ink">
@@ -101,7 +114,9 @@ export function AuctionListPage({ onSelect }: { onSelect: (auctionId: string) =>
                 <div className="mt-2 flex items-baseline justify-between">
                   <span className="text-xs uppercase tracking-wide text-ink-muted">{t("list.currentBid")}</span>
                   <div className="text-right">
-                    <div className="text-xl font-bold text-brand">{gel(auction.current_price)}</div>
+                    <div className="text-xl font-bold text-brand">
+                      <AnimatedPrice value={auction.current_price} />
+                    </div>
                     {usdEquivalent(auction.current_price, auction.gel_rate) && (
                       <div className="text-xs text-ink-faint">
                         {usdEquivalent(auction.current_price, auction.gel_rate)}
