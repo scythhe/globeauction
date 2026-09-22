@@ -82,3 +82,49 @@ describe("bidding.placeBid — batch_id/voided_at/voided_by never appear in the 
     assert.ok(!("voided_by" in bid));
   });
 });
+
+// bids.max_amount is numeric(12,2) — 10 integer digits, 2 decimal. The
+// string path validated max_amount against a pattern that (before this
+// fix) allowed 15 integer digits, and the number path only checked
+// Number.isFinite with no digit cap at all — both let an oversized value
+// reach place_bid() and blow up as an unhandled Postgres "numeric field
+// overflow" instead of a clean 400. Both call shapes, and both the old
+// 11-15-digit gap and the fully-uncapped number path, must reject the
+// same way now.
+describe("bidding.placeBid — max_amount digit cap matches the actual column width", () => {
+  test("an oversized number is rejected the same as an oversized string", async () => {
+    const team = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id, { startingPrice: 1000 });
+    const bidder = await createUser(client, { role: "buyer" });
+
+    await assert.rejects(() => biddingService.placeBid(pool, actorFor(bidder.id), auction.id, 1e26));
+    await assert.rejects(() =>
+      biddingService.placeBid(pool, actorFor(bidder.id), auction.id, "9".repeat(20)),
+    );
+  });
+
+  test("11 integer digits is rejected even though it 'looks' finite/short", async () => {
+    const team = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id, { startingPrice: 1000 });
+    const bidder = await createUser(client, { role: "buyer" });
+
+    await assert.rejects(() =>
+      biddingService.placeBid(pool, actorFor(bidder.id), auction.id, 12345678901),
+    );
+    await assert.rejects(() =>
+      biddingService.placeBid(pool, actorFor(bidder.id), auction.id, "12345678901"),
+    );
+  });
+
+  test("a number at the 10-digit boundary is still accepted", async () => {
+    const team = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, team.id);
+    const auction = await createAuction(client, vehicle.id, team.id, { startingPrice: 1000 });
+    const bidder = await createUser(client, { role: "buyer" });
+
+    const bid = await biddingService.placeBid(pool, actorFor(bidder.id), auction.id, 9999999999.99);
+    assert.equal(Number((bid as { max_amount: string }).max_amount), 9999999999.99);
+  });
+});

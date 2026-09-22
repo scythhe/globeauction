@@ -34,7 +34,12 @@ describe("auth.register", () => {
     assert.ok(!("password_hash" in user), "password_hash must never be in the response");
   });
 
-  test("rejects a duplicate email with 409, not a raw DB constraint error", async () => {
+  // A distinct "email_taken" code (and skipping the argon2id hash on this
+  // branch) told anyone probing the endpoint which emails already have
+  // accounts — a live user-enumeration oracle, both via the response body
+  // and via timing. Now it's the same generic validation_error every other
+  // register rejection uses, not a raw DB constraint error either way.
+  test("rejects a duplicate email with the same generic error as any other validation failure", async () => {
     await authService.register(pool, {
       email: "dupe@example.com",
       password: "password123",
@@ -49,7 +54,8 @@ describe("auth.register", () => {
         }),
       (err: unknown) => {
         assert.ok(err instanceof ApiError);
-        assert.equal(err.status, 409);
+        assert.equal(err.status, 400);
+        assert.equal(err.code, "validation_error");
         return true;
       },
     );

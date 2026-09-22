@@ -35,7 +35,15 @@ export async function register(pool: Pool, input: RegisterInput) {
 
   const existing = await usersRepo.findByEmail(pool, input.email);
   if (existing) {
-    throw new ApiError(409, "email_taken");
+    // Same enumeration concern login() already guards against (see
+    // getDummyHash below): a distinct "email_taken" code told anyone who
+    // owns which email, and skipping hashPassword() on this branch was
+    // also a timing side channel (this branch returned fast; a real
+    // signup pays argon2id's cost). Burn the same wall-clock cost and
+    // return the same generic code the field-shape checks above use, so
+    // neither the response nor its timing reveals which case happened.
+    await hashPassword(input.password);
+    throw Errors.validation("could not complete registration with the details provided");
   }
 
   const passwordHash = await hashPassword(input.password);
