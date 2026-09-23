@@ -248,15 +248,27 @@ describe("place_bid — validation", () => {
     );
   });
 
-  test("auction_not_live: auction status is scheduled", async () => {
-    const owner = await createUser(client, { role: "team" });
-    const vehicle = await createVehicle(client, owner.id);
-    const auction = await createAuction(client, vehicle.id, owner.id);
-    await client.query("update auctions set status = 'scheduled' where id = $1", [auction.id]);
+  test("auction_not_live: status is anything other than live/scheduled", async () => {
     const bidder = await createUser(client);
 
+    for (const status of ["unsold", "cancelled", "pending_seller", "counter_offered"]) {
+      const { auction } = await basicAuction();
+      await client.query("update auctions set status = $2 where id = $1", [auction.id, status]);
+      await assert.rejects(
+        () => placeBid(client, auction.id, bidder.id, 1000),
+        (err: PgError) => err.message === "auction_not_live",
+        `expected status=${status} to reject`,
+      );
+    }
+
+    // 'sold' carries its own required columns (auctions_sold constraint).
+    const { auction: soldAuction } = await basicAuction();
+    await client.query(
+      "update auctions set status = 'sold', final_price = 1000, sold_to = $2 where id = $1",
+      [soldAuction.id, bidder.id],
+    );
     await assert.rejects(
-      () => placeBid(client, auction.id, bidder.id, 1000),
+      () => placeBid(client, soldAuction.id, bidder.id, 1000),
       (err: PgError) => err.message === "auction_not_live",
     );
   });
@@ -562,5 +574,81 @@ describe("place_bid — concurrency", () => {
     } finally {
       await Promise.all(clients.map((c) => c.end()));
     }
+  });
+});
+
+// db/013: a bidder can place a max bid before the auction's own starts_at,
+// same Case A-E resolution as a live bid. No lower time bound at all for
+// 'scheduled' — that's the point — the ends_at upper bound and every other
+// guard (bid_limit, own_organization, bidding_disabled) still apply exactly
+// as they do once live.
+describe("place_bid — pre-bidding on a scheduled auction", () => {
+  async function scheduledAuction(startingPrice = 1000) {
+    const owner = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, owner.id);
+    const auction = await createAuction(client, vehicle.id, owner.id, {
+      startingPrice,
+      startsAt: new Date(Date.now() + 60 * 60_000),
+      endsAt: new Date(Date.now() + 25 * 60 * 60_000),
+    });
+    await client.query("update auctions set status = 'scheduled' where id = $1", [auction.id]);
+    return { owner, vehicle, auction };
+  }
+
+  test("accepts a pre-bid and resolves it exactly like a live Case A bid", async () => {
+    const { auction } = await scheduledAuction(1000);
+    const bidder = await createUser(client);
+
+    const result = await placeBid(client, auction.id, bidder.id, 1500);
+    assert.equal(Number(result.amount), 1000);
+    assert.equal(Number(result.max_amount), 1500);
+
+    const updated = await getAuction(client, auction.id);
+    assert.equal(updated.status, "scheduled");
+    assert.equal(Number(updated.current_price), 1000);
+    assert.equal(updated.high_bid_id, result.id);
+  });
+
+  test("two pre-bidders resolve via the same proxy logic as live bidding (Case C)", async () => {
+    const { auction } = await scheduledAuction(1000);
+    const first = await createUser(client);
+    const second = await createUser(client);
+
+    await placeBid(client, auction.id, first.id, 1200);
+    const winning = await placeBid(client, auction.id, second.id, 1500);
+
+    const updated = await getAuction(client, auction.id);
+    assert.equal(updated.high_bid_id, winning.id);
+    // second's max (1500) beats first's max (1200) by more than one
+    // increment, so second leads at exactly their own bid amount per
+    // Case C's least(H.max + increment, new max) — same rule a live
+    // Case C bid follows.
+    assert.equal(Number(updated.current_price), Number(winning.amount));
+  });
+
+  test("still enforces bid_limit_exceeded on a pre-bid", async () => {
+    const { auction } = await scheduledAuction(1000);
+    const bidder = await createUser(client, { bidLimit: 1200 });
+
+    await assert.rejects(
+      () => placeBid(client, auction.id, bidder.id, 1500),
+      (err: PgError) => err.message === "bid_limit_exceeded",
+    );
+  });
+
+  test("still rejects a pre-bid past the auction's own ends_at", async () => {
+    const owner = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, owner.id);
+    const auction = await createAuction(client, vehicle.id, owner.id, {
+      startsAt: new Date(Date.now() - 2000),
+      endsAt: new Date(Date.now() - 1000),
+    });
+    await client.query("update auctions set status = 'scheduled' where id = $1", [auction.id]);
+    const bidder = await createUser(client);
+
+    await assert.rejects(
+      () => placeBid(client, auction.id, bidder.id, 1000),
+      (err: PgError) => err.message === "auction_not_live",
+    );
   });
 });

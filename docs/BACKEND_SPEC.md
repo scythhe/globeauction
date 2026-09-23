@@ -236,8 +236,16 @@ transaction, opened with `SELECT ... FROM auctions WHERE id = $1 FOR UPDATE`.
 
 **Validation** (reject the whole transaction on any failure):
 
-1. Auction exists and `status = 'live'`.
-2. `now()` is between `starts_at` and `ends_at`.
+1. Auction exists and `status` is `live` **or `scheduled`** (db/013 —
+   pre-bidding: a max bid placed before `starts_at` runs through this exact
+   same algorithm, so competing pre-bids resolve via the normal Case A-E
+   proxy logic ahead of time; whatever `current_price`/`high_bid_id` that
+   settles on carries straight through when `openScheduledAuctions` flips
+   the row to `live`). A `live` row with `starts_at` still in the future
+   is rejected as defense in depth (shouldn't occur — the job only flips
+   `scheduled -> live` once `starts_at <= now()` — but `scheduled` itself
+   has no lower time bound; that's the entire point of pre-bidding).
+2. `now()` is before `ends_at`.
 3. Bidder is active, has role `dealer` or `buyer`, and `can_bid = true`.
 4. Bidder's `organization_id` is not the vehicle owner's `organization_id`,
    and bidder is not the owner. Both checks — org may be null on a private buyer.

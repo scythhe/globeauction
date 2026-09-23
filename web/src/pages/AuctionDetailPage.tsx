@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, ApiError, type Auction, type Bid, type Vehicle, type VehiclePhoto } from "../api.ts";
 import { useAuth, errorMessage } from "../AuthContext.tsx";
 import { StatusBadge } from "../components/StatusBadge.tsx";
@@ -8,6 +8,12 @@ import { CarIcon, FuelIcon, GaugeIcon, GearIcon } from "../components/icons.tsx"
 import { addGel, gel, subtractGel, usdEquivalent } from "../format.ts";
 import { usePolling } from "../usePolling.ts";
 import { useTranslation } from "../i18n/index.tsx";
+
+// Fixed, deliberately coarser than the ordinary bid_increment table —
+// Monster Bid (and pre-bidding, which reuses this exact same stepper) is
+// meant for a bigger, more decisive jump, not the same fine-grained
+// stepping Quick Bid already does.
+const BIG_STEP = "100.00";
 
 export function AuctionDetailPage({
   auctionId,
@@ -29,18 +35,26 @@ export function AuctionDetailPage({
   // prevents the fat-finger-typo class of mistake void-last-bid exists to
   // clean up after, not just a validation message after the fact.
   const [stepperValue, setStepperValue] = useState<string | null>(null);
-  // Monster Bid — Copart's real term: type an exact amount and jump
-  // straight to it, bypassing the stepper's increment-only entry. Same
-  // POST /bids endpoint as Quick Bid underneath (same validation, same
-  // bid_limit, same void-last-bid eligibility) — the only thing that's
-  // actually different is this UI lets you type a number instead of
-  // stepping to it, plus a stronger confirmation since it's a bigger,
-  // more deliberate jump.
+  // Monster Bid — Copart's real term: jump straight to a much bigger
+  // amount, bypassing Quick Bid's normal increment-only stepping. It used
+  // to be a free-text field; now it's the same stepper interaction as
+  // Quick Bid, just with a fixed, coarser step (100 ₾, not the variable
+  // bid_increment table) — still bypasses the ordinary increments (that's
+  // the whole point), but dialed in rather than typed, so it can't
+  // fat-finger a typo any more than Quick Bid can. Same POST /bids
+  // endpoint underneath either way (same validation, same bid_limit, same
+  // void-last-bid eligibility).
   const [monsterBidOpen, setMonsterBidOpen] = useState(false);
   const [monsterBidValue, setMonsterBidValue] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // "Bid Placed!" — briefly overrides the ring's label (not its color,
+  // which already reflects the real outcome) right after a submit, so a
+  // bid feels acknowledged instantly instead of just silently updating
+  // the same Winning/Outbid text it already showed.
+  const [justBidPlaced, setJustBidPlaced] = useState(false);
+  const bidPlacedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async (): Promise<Auction | null> => {
     try {
@@ -68,7 +82,7 @@ export function AuctionDetailPage({
   // The heart of the "live bid war" feel: this is what turns proxy bidding
   // (invisible unless you refresh) into something that looks and feels
   // live, without touching place_bid() at all.
-  usePolling(load, 3000, auction?.status === "live");
+  usePolling(load, 3000, auction?.status === "live" || auction?.status === "scheduled");
 
   // Keeps the stepper's floor in sync with the live minimum. Only ever
   // moves it *up* — if someone else's bid raises nextMinimumBid past
@@ -80,6 +94,19 @@ export function AuctionDetailPage({
     if (!auction) return;
     setStepperValue((current) =>
       current === null || Number(current) < Number(auction.nextMinimumBid)
+        ? auction.nextMinimumBid
+        : current,
+    );
+  }, [auction?.nextMinimumBid]);
+
+  // Same floor-tracking rule as the Quick Bid stepper above, applied to
+  // Monster Bid / pre-bid's own stepper so it always opens on a valid
+  // amount — there's no free-text entry left to fall back on if this
+  // drifted below the real minimum.
+  useEffect(() => {
+    if (!auction) return;
+    setMonsterBidValue((current) =>
+      current === "" || Number(current) < Number(auction.nextMinimumBid)
         ? auction.nextMinimumBid
         : current,
     );
@@ -107,11 +134,14 @@ export function AuctionDetailPage({
       setSubmitting(false);
       return;
     }
-    // No one-off "here's what just happened" message — the persistent
-    // WINNING/OUTBID badge below (derived from bids + high_bid_id on every
-    // load) already reflects the true state at all times, matching how
-    // Copart's own bidding screen shows an always-current status rather
-    // than a toast that appears once and vanishes.
+    // The persistent Winning/Outbid ring (derived from bids + high_bid_id
+    // on every load) already reflects the true state at all times — this
+    // just makes the very next render say "Bid Placed!" for a moment
+    // instead of jumping straight to that same standing status with no
+    // acknowledgement the click did anything.
+    if (bidPlacedTimeout.current) clearTimeout(bidPlacedTimeout.current);
+    setJustBidPlaced(true);
+    bidPlacedTimeout.current = setTimeout(() => setJustBidPlaced(false), 1500);
     await load();
     setSubmitting(false);
   }
@@ -128,19 +158,34 @@ export function AuctionDetailPage({
     setStepperValue(Number(next) < Number(auction.nextMinimumBid) ? auction.nextMinimumBid : next);
   }
 
+  function stepBigUp() {
+    if (!monsterBidValue) return;
+    setMonsterBidValue(addGel(monsterBidValue, BIG_STEP));
+  }
+
+  function stepBigDown() {
+    if (!auction || !monsterBidValue) return;
+    const next = subtractGel(monsterBidValue, BIG_STEP);
+    setMonsterBidValue(Number(next) < Number(auction.nextMinimumBid) ? auction.nextMinimumBid : next);
+  }
+
+  // No native confirm() dialog here (an unbranded browser popup, jarring
+  // mid-flow) — the stepper's own reveal-then-Confirm-button sequence is
+  // already the deliberate multi-step flow that used to justify one, and
+  // it no longer has free text to double-check the way it once did.
   async function handleMonsterBid() {
-    const trimmed = monsterBidValue.trim();
-    // Client-side check only, for immediate feedback — the actual
-    // validation (shape, minimum, bid_limit) is the server's, same as
-    // every other bid path.
-    if (!Number.isFinite(Number(trimmed)) || Number(trimmed) <= 0 || trimmed === "") {
-      setActionError(t("detail.enterValidAmount"));
-      return;
-    }
-    if (!confirm(t("detail.monsterBidConfirm", { amount: gel(trimmed) }))) return;
-    await submitBid(trimmed);
-    setMonsterBidValue("");
+    await submitBid(monsterBidValue);
     setMonsterBidOpen(false);
+  }
+
+  // Pre-bidding (db/013): a max bid placed before the auction's own
+  // starts_at. Same endpoint, same stepper mechanic as Monster Bid (there's
+  // no "current price vs. increment" context worth stepping through yet —
+  // nothing's live), just without Monster Bid's extra confirmation, since
+  // this is the *only* way to bid pre-launch, not a deliberate power-user
+  // detour away from a normal default.
+  async function handlePreBid() {
+    await submitBid(monsterBidValue);
   }
 
   async function handleBuyNow() {
@@ -168,6 +213,8 @@ export function AuctionDetailPage({
 
   const canBid = user?.role === "buyer" || user?.role === "dealer";
   const isLive = auction.status === "live";
+  // Pre-bidding (db/013): a scheduled auction can already take a max bid.
+  const isScheduled = auction.status === "scheduled";
   const buyNowAvailable = isLive && auction.buy_now_price && !auction.high_bid_id;
   const currentPhoto = photos[activePhoto];
 
@@ -184,6 +231,31 @@ export function AuctionDetailPage({
     : highBid?.bidder_id === user?.id
       ? "winning"
       : "outbid";
+
+  // The ring only ever appears once you've actually bid — there's no
+  // "someone else is currently ahead" neutral state to show otherwise
+  // (Copart anonymizes that with a per-bidder country flag; we have no
+  // such identity to attribute it to, and showing a stranger's number
+  // with nothing to compare it to isn't actually informative here).
+  const ringStatus: "winning" | "outbid" | "won" | "lost" | null =
+    auction.status === "sold"
+      ? auction.sold_to === user?.id
+        ? "won"
+        : myBid
+          ? "lost"
+          : null
+      : myStatus;
+  const ringLabel = justBidPlaced
+    ? t("detail.bidPlaced")
+    : ringStatus === "winning"
+      ? t("detail.winning")
+      : ringStatus === "outbid"
+        ? t("detail.outbid")
+        : ringStatus === "won"
+          ? t("detail.won")
+          : ringStatus === "lost"
+            ? t("detail.outbid")
+            : "";
 
   return (
     <div>
@@ -296,36 +368,46 @@ export function AuctionDetailPage({
             <div className="p-5">
             <div className="mb-3 flex items-center justify-between">
               <StatusBadge status={auction.status} />
-              <CountdownTimer
-                endsAt={auction.ends_at}
-                live={isLive}
-                bonusExtensionUsed={auction.bonus_extension_used}
-                softCloseExtension={auction.soft_close_extension}
-              />
+              {isLive ? (
+                <CountdownTimer
+                  endsAt={auction.ends_at}
+                  live={isLive}
+                  bonusExtensionUsed={auction.bonus_extension_used}
+                  softCloseExtension={auction.soft_close_extension}
+                />
+              ) : (
+                isScheduled && (
+                  // Not the ends_at countdown — that isn't meaningful yet,
+                  // and CountdownTimer's own "ended" state is keyed off
+                  // `live`, so reusing it here pre-launch would misreport
+                  // a scheduled auction as already over.
+                  <span className="text-xs text-ink-muted">
+                    {t("detail.startsAt", { date: new Date(auction.starts_at).toLocaleString() })}
+                  </span>
+                )
+              )}
             </div>
 
-            <div className="mb-1 text-xs uppercase tracking-wide text-ink-muted">{t("detail.currentBid")}</div>
-            <div className="font-display text-4xl font-bold text-brand">
-              <AnimatedPrice value={auction.current_price} />
-            </div>
-            {usdEquivalent(auction.current_price, auction.gel_rate) && (
-              <div className="mb-1 text-sm text-ink-faint">
-                {usdEquivalent(auction.current_price, auction.gel_rate)}
-              </div>
-            )}
-
-            {/* Persistent status — always visible, always current. This is
-                what Copart actually shows (a standing "Outbid" label), not
-                a message that flashes once after you click and disappears. */}
-            {myStatus === "winning" && (
-              <div className="mb-3 inline-flex items-center gap-1.5 rounded bg-live/15 px-2 py-1 text-xs font-bold uppercase tracking-wider text-live">
-                ● {t("detail.winning")}
-              </div>
-            )}
-            {myStatus === "outbid" && (
-              <div className="mb-3 inline-flex items-center gap-1.5 rounded bg-brand/15 px-2 py-1 text-xs font-bold uppercase tracking-wider text-brand">
-                ● {t("detail.outbid")}
-              </div>
+            {/* The ring only replaces the plain price once you've actually
+                bid — Copart shows this ring for every visitor, colored by
+                whichever anonymized bidder currently leads, but that relies
+                on a per-bidder country-flag identity we don't have. Before
+                you've bid, there's nothing personalized to show, so the
+                plain current-bid figure stays exactly as it was. */}
+            {ringStatus ? (
+              <BidStatusRing status={ringStatus} price={auction.current_price} label={ringLabel} />
+            ) : (
+              <>
+                <div className="mb-1 text-xs uppercase tracking-wide text-ink-muted">{t("detail.currentBid")}</div>
+                <div className="font-display text-4xl font-bold text-brand">
+                  <AnimatedPrice value={auction.current_price} />
+                </div>
+                {usdEquivalent(auction.current_price, auction.gel_rate) && (
+                  <div className="mb-1 text-sm text-ink-faint">
+                    {usdEquivalent(auction.current_price, auction.gel_rate)}
+                  </div>
+                )}
+              </>
             )}
 
             {auction.reserveMet !== undefined && (
@@ -340,16 +422,6 @@ export function AuctionDetailPage({
             {auction.reserve_price && (
               <div className="mb-3 text-xs text-ink-faint">
                 {t("detail.reserveTeamView", { price: gel(auction.reserve_price) })}
-              </div>
-            )}
-
-            {/* Minimalistic on purpose — a single beat, not a full
-                celebration screen — but it has to actually say "won,"
-                not just leave the win to be inferred from the status
-                badge like everything else here. */}
-            {auction.status === "sold" && auction.sold_to === user?.id && (
-              <div className="animate-win-pop mb-3 rounded-lg border border-live bg-live/10 px-4 py-3 text-center">
-                <div className="font-display text-2xl font-bold text-live">{t("detail.won")}</div>
               </div>
             )}
 
@@ -427,14 +499,15 @@ export function AuctionDetailPage({
                 {monsterBidOpen ? (
                   <div className="mt-3 rounded border border-border p-3">
                     <p className="mb-2 text-xs text-ink-faint">{t("detail.monsterBidExplainer")}</p>
-                    <div className="flex gap-2">
-                      <input
-                        type="number"
+                    <div className="flex items-stretch gap-2">
+                      <AmountStepper
                         value={monsterBidValue}
-                        onChange={(e) => setMonsterBidValue(e.target.value)}
-                        placeholder={t("detail.monsterBidPlaceholder")}
-                        min={0}
-                        className="w-full rounded border border-border bg-bg px-3 py-2 text-ink outline-none focus:border-brand"
+                        onStepDown={stepBigDown}
+                        onStepUp={stepBigUp}
+                        downDisabled={submitting || monsterBidValue === auction.nextMinimumBid}
+                        upDisabled={submitting}
+                        stepDownLabel={t("detail.stepDown")}
+                        stepUpLabel={t("detail.stepUp")}
                       />
                       <button
                         type="button"
@@ -459,21 +532,146 @@ export function AuctionDetailPage({
               </div>
             )}
 
+            {/* Pre-bidding (db/013) — the only bid control before the
+                auction actually opens. Reuses Monster Bid's exact stepper
+                (fixed ±100 step, no live increment context to step
+                through yet) rather than a second, separate input style. */}
+            {isScheduled && canBid && user?.canBid && monsterBidValue !== "" && (
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-ink-muted">
+                  {t("detail.preBidLabel")}
+                </label>
+                <p className="mb-2 text-xs text-ink-faint">{t("detail.preBidExplainer")}</p>
+                <div className="flex items-stretch gap-2">
+                  <AmountStepper
+                    value={monsterBidValue}
+                    onStepDown={stepBigDown}
+                    onStepUp={stepBigUp}
+                    downDisabled={submitting || monsterBidValue === auction.nextMinimumBid}
+                    upDisabled={submitting}
+                    stepDownLabel={t("detail.stepDown")}
+                    stepUpLabel={t("detail.stepUp")}
+                  />
+                  <button
+                    type="button"
+                    onClick={handlePreBid}
+                    disabled={submitting}
+                    className="shrink-0 rounded bg-brand px-4 py-2 text-sm font-bold text-white shadow-[0_0_16px_-4px_var(--color-brand)] transition hover:bg-brand-hover disabled:opacity-50"
+                  >
+                    {t("detail.preBidSubmit")}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {actionError && <p className="mt-2 text-sm text-brand">{actionError}</p>}
 
-            {isLive && canBid && !user?.canBid && (
+            {(isLive || isScheduled) && canBid && !user?.canBid && (
               <p className="mt-2 text-sm italic text-ink-muted">{t("detail.biddingNotEnabled")}</p>
             )}
-            {isLive && !canBid && user && (
+            {(isLive || isScheduled) && !canBid && user && (
               <p className="mt-2 text-sm italic text-ink-muted">{t("detail.teamCannotBid")}</p>
             )}
-            {isLive && !user && (
+            {(isLive || isScheduled) && !user && (
               <p className="mt-2 text-sm italic text-ink-muted">{t("detail.logInToBid")}</p>
             )}
             </div>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Shared by Monster Bid and pre-bidding — both step by a fixed amount
+// (BIG_STEP) rather than Quick Bid's variable bid_increment, so they share
+// one stepper instead of two near-identical copies of the same markup.
+// The circular Winning/Outbid/Won/Outbid-final indicator — replaces the
+// plain current-price figure once you've actually bid. "winning"/"outbid"
+// are an open ring (auction still live/scheduled, you can still act);
+// "won"/"lost" are a solid filled circle with a checkmark (auction over) —
+// same distinction Copart's own widget draws between "still in play" and
+// "final."
+function BidStatusRing({
+  status,
+  price,
+  label,
+}: {
+  status: "winning" | "outbid" | "won" | "lost";
+  price: string;
+  label: string;
+}) {
+  const solid = status === "won" || status === "lost";
+  const palette =
+    status === "winning"
+      ? "border-live bg-live/10 text-live"
+      : status === "outbid"
+        ? "border-ink-faint bg-surface-hover text-ink-muted"
+        : status === "won"
+          ? "border-live bg-live text-white"
+          : "border-brand bg-brand text-white";
+
+  return (
+    <div
+      className={[
+        // mx-auto: this is the one circular element in an otherwise
+        // block-of-text panel — left-flush like the plain price it
+        // replaces read as unintentional, not a deliberate focal point.
+        "animate-win-pop mx-auto mb-3 flex h-36 w-36 flex-col items-center justify-center rounded-full border-4 px-3 text-center",
+        palette,
+      ].join(" ")}
+    >
+      {solid && <span className="text-3xl leading-none">✓</span>}
+      {!solid && (
+        <span className="font-display text-xl font-bold tabular-nums">{gel(price)}</span>
+      )}
+      <span
+        className={`text-[10px] font-bold uppercase leading-tight tracking-wide ${solid ? "mt-1" : "mt-0.5"}`}
+      >
+        {label}
+      </span>
+    </div>
+  );
+}
+
+function AmountStepper({
+  value,
+  onStepDown,
+  onStepUp,
+  downDisabled,
+  upDisabled,
+  stepDownLabel,
+  stepUpLabel,
+}: {
+  value: string;
+  onStepDown: () => void;
+  onStepUp: () => void;
+  downDisabled?: boolean;
+  upDisabled?: boolean;
+  stepDownLabel: string;
+  stepUpLabel: string;
+}) {
+  return (
+    <div className="flex items-center rounded border border-border bg-bg">
+      <button
+        type="button"
+        onClick={onStepDown}
+        disabled={downDisabled}
+        aria-label={stepDownLabel}
+        className="px-3 py-2 text-lg font-bold text-ink-muted transition hover:text-ink disabled:opacity-30"
+      >
+        −
+      </button>
+      <span className="min-w-[7ch] flex-1 px-1 text-center font-mono text-ink">{gel(value)}</span>
+      <button
+        type="button"
+        onClick={onStepUp}
+        disabled={upDisabled}
+        aria-label={stepUpLabel}
+        className="px-3 py-2 text-lg font-bold text-ink-muted transition hover:text-ink disabled:opacity-30"
+      >
+        +
+      </button>
     </div>
   );
 }
