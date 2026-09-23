@@ -43,7 +43,9 @@ export function AuctionDetailPage({
   // the whole point), but dialed in rather than typed, so it can't
   // fat-finger a typo any more than Quick Bid can. Same POST /bids
   // endpoint underneath either way (same validation, same bid_limit, same
-  // void-last-bid eligibility).
+  // void-last-bid eligibility) — the one difference is the `flat: true`
+  // flag (db/014_flat_bid.sql), which publishes the dialed-in number as
+  // the visible price outright instead of Quick Bid's proxy concealment.
   const [monsterBidOpen, setMonsterBidOpen] = useState(false);
   const [monsterBidValue, setMonsterBidValue] = useState("");
   const [actionError, setActionError] = useState<string | null>(null);
@@ -116,11 +118,11 @@ export function AuctionDetailPage({
   // as Postgres `numeric` directly, and round-tripping it through a JS
   // number here first could misrepresent the exact figure the user typed
   // at binary-floating-point boundaries (CLAUDE.md hard rule #1).
-  async function submitBid(amount: string) {
+  async function submitBid(amount: string, flat: boolean = false) {
     setActionError(null);
     setSubmitting(true);
     try {
-      await api.post<Bid>(`/auctions/${auctionId}/bids`, { max_amount: amount });
+      await api.post<Bid>(`/auctions/${auctionId}/bids`, { max_amount: amount, flat });
     } catch (err) {
       // Only the POST itself failing means the bid didn't happen. Anything
       // that goes wrong after this point (refreshing the displayed state)
@@ -174,7 +176,7 @@ export function AuctionDetailPage({
   // already the deliberate multi-step flow that used to justify one, and
   // it no longer has free text to double-check the way it once did.
   async function handleMonsterBid() {
-    await submitBid(monsterBidValue);
+    await submitBid(monsterBidValue, true);
     setMonsterBidOpen(false);
   }
 
@@ -185,7 +187,7 @@ export function AuctionDetailPage({
   // this is the *only* way to bid pre-launch, not a deliberate power-user
   // detour away from a normal default.
   async function handlePreBid() {
-    await submitBid(monsterBidValue);
+    await submitBid(monsterBidValue, true);
   }
 
   async function handleBuyNow() {

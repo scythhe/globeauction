@@ -63,7 +63,7 @@ export function auctionsRouter(pool: Pool): Router {
   // §12: rate limit bidding per user — not for load, to stop a script
   // walking an opponent's ceiling up with repeated minimum bids.
   router.post("/:id/bids", requireUuidParams("id"), bidRateLimiter(), async (req, res) => {
-    const { max_amount } = req.body ?? {};
+    const { max_amount, flat } = req.body ?? {};
     const bid = await biddingService.placeBid(
       pool,
       req.actor,
@@ -73,6 +73,9 @@ export function auctionsRouter(pool: Pool): Router {
         ipAddress: req.ip ?? null,
         userAgent: req.header("user-agent") ?? null,
       },
+      // Coerced to a strict boolean — only a literal `true` opts a bid into
+      // flat/Monster-Bid semantics, never any other truthy request body value.
+      flat === true,
     );
     res.status(201).json(bid);
   });

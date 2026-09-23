@@ -33,10 +33,15 @@ export async function placeBid(
   maxAmount: string,
   ipAddress: string | null = null,
   userAgent: string | null = null,
+  // db/014_flat_bid.sql: Monster Bid / pre-bidding pass true so the amount
+  // they typed becomes the visible price outright instead of being
+  // proxy-compressed the way Quick Bid's is. Defaults false so every
+  // existing Quick Bid call keeps proxy behavior unchanged.
+  flat: boolean = false,
 ): Promise<Bid> {
   const { rows } = await pool.query<Bid>(
-    "select * from place_bid($1, $2, $3, $4, $5) as bid",
-    [auctionId, bidderId, maxAmount, ipAddress, userAgent],
+    "select * from place_bid($1, $2, $3, $4, $5, $6) as bid",
+    [auctionId, bidderId, maxAmount, ipAddress, userAgent, flat],
   );
   return rows[0]!;
 }

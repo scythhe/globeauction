@@ -217,6 +217,85 @@ describe("place_bid — case E: exact tie on maximums", () => {
   });
 });
 
+describe("place_bid — flat bids (Monster Bid / pre-bidding)", () => {
+  test("case A: a flat first bid publishes its own number, not starting_price", async () => {
+    const { auction } = await basicAuction(1000);
+    const bidder = await createUser(client);
+
+    const result = await placeBid(client, auction.id, bidder.id, 5000, null, null, true);
+    assert.equal(Number(result.amount), 5000);
+    assert.equal(Number(result.max_amount), 5000);
+
+    const updated = await getAuction(client, auction.id);
+    assert.equal(Number(updated.current_price), 5000);
+  });
+
+  test("case B: a flat self-raise moves current_price to the new number", async () => {
+    const { auction } = await basicAuction(1000);
+    const bidder = await createUser(client);
+
+    await placeBid(client, auction.id, bidder.id, 1500);
+    let updated = await getAuction(client, auction.id);
+    assert.equal(Number(updated.current_price), 1000, "ordinary bid rests at starting_price, no rival yet");
+
+    await placeBid(client, auction.id, bidder.id, 3000, null, null, true);
+    updated = await getAuction(client, auction.id);
+    assert.equal(Number(updated.current_price), 3000, "flat raise publishes the new ceiling immediately");
+  });
+
+  test("case C: a flat bid that takes the lead shows its own full number, not rival-max+increment", async () => {
+    const { auction } = await basicAuction(1000);
+    const alice = await createUser(client, { email: "alice@example.com" });
+    const bob = await createUser(client, { email: "bob@example.com" });
+
+    await placeBid(client, auction.id, alice.id, 1200);
+    // Ordinary Case C would land bob at min(1200+100, 5000) = 1300. Flat
+    // skips that compression and shows bob's own 5000 outright.
+    const bobBid = await placeBid(client, auction.id, bob.id, 5000, null, null, true);
+
+    assert.equal(Number(bobBid.amount), 5000);
+    assert.equal(Number(bobBid.max_amount), 5000);
+
+    const updated = await getAuction(client, auction.id);
+    assert.equal(Number(updated.current_price), 5000);
+    assert.equal(updated.high_bid_id, bobBid.id);
+  });
+
+  test("case D: a flat bid below a rival's real max still loses to it", async () => {
+    const { auction } = await basicAuction(1000);
+    const alice = await createUser(client, { email: "alice@example.com" });
+    const bob = await createUser(client, { email: "bob@example.com" });
+
+    await placeBid(client, auction.id, alice.id, 10_000);
+    // Bob's flat bid of 4000 clears the floor (starting_price 1000) but is
+    // nowhere near alice's real ceiling — flat must not let him win anyway.
+    const bobBid = await placeBid(client, auction.id, bob.id, 4000, null, null, true);
+
+    assert.equal(Number(bobBid.amount), 4000);
+    assert.equal(bobBid.is_proxy, false, "bob's own row records his loss, not a proxy");
+
+    const updated = await getAuction(client, auction.id);
+    // alice proxied to min(bob.max + increment(1000), alice.max) = min(4000+100, 10000) = 4100
+    assert.equal(Number(updated.current_price), 4100);
+
+    const bids = await listBids(client, auction.id);
+    const highBid = bids.find((b) => b.id === updated.high_bid_id);
+    assert.ok(highBid);
+    assert.equal(highBid!.bidder_id, alice.id, "alice's genuinely higher max still wins");
+  });
+
+  test("a non-flat (Quick Bid) call is completely unaffected by the new default", async () => {
+    const { auction } = await basicAuction(1000);
+    const alice = await createUser(client, { email: "alice@example.com" });
+    const bob = await createUser(client, { email: "bob@example.com" });
+
+    await placeBid(client, auction.id, alice.id, 1200);
+    const bobBid = await placeBid(client, auction.id, bob.id, 2000);
+
+    assert.equal(Number(bobBid.amount), 1300, "ordinary Case C proxy compression, unchanged");
+  });
+});
+
 describe("place_bid — validation", () => {
   test("bid_too_low: below starting_price with no existing bid", async () => {
     const { auction } = await basicAuction(1000);

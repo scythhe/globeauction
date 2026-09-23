@@ -98,6 +98,8 @@ export async function placeBid(
   auctionId: string,
   maxAmount: unknown,
   requestMeta: { ipAddress?: string | null; userAgent?: string | null } = {},
+  // Monster Bid / pre-bidding only (db/014_flat_bid.sql) — see bids repo.
+  flat: boolean = false,
 ) {
   if (!actor) throw Errors.unauthenticated();
 
@@ -111,6 +113,7 @@ export async function placeBid(
       normalizedMaxAmount,
       requestMeta.ipAddress ?? null,
       requestMeta.userAgent ?? null,
+      flat,
     );
     // place_bid() returns the full bids%rowtype. ip_address/user_agent are
     // team-only (BACKEND_SPEC.md §12) even on the bidder's own just-placed

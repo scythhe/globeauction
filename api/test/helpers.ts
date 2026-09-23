@@ -192,10 +192,11 @@ export async function placeBid(
   maxAmount: number,
   ipAddress: string | null = null,
   userAgent: string | null = null,
+  flat: boolean = false,
 ) {
   const { rows } = await client.query(
-    "select * from place_bid($1, $2, $3, $4, $5) as bid",
-    [auctionId, bidderId, maxAmount, ipAddress, userAgent],
+    "select * from place_bid($1, $2, $3, $4, $5, $6) as bid",
+    [auctionId, bidderId, maxAmount, ipAddress, userAgent, flat],
   );
   return rows[0];
 }

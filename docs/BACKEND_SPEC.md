@@ -231,8 +231,11 @@ Lives in code for now. Move to a table if it starts changing.
 
 ### 5.3 Algorithm
 
-`place_bid(auction_id, bidder_id, max_amount)` — runs entirely inside one
-transaction, opened with `SELECT ... FROM auctions WHERE id = $1 FOR UPDATE`.
+`place_bid(auction_id, bidder_id, max_amount, ip_address, user_agent, flat)` —
+runs entirely inside one transaction, opened with
+`SELECT ... FROM auctions WHERE id = $1 FOR UPDATE`. `flat` defaults to
+`false` (ordinary Quick Bid); Monster Bid and pre-bidding pass `true` — see
+the flat-bid note under Resolution below.
 
 **Validation** (reject the whole transaction on any failure):
 
@@ -256,16 +259,20 @@ transaction, opened with `SELECT ... FROM auctions WHERE id = $1 FOR UPDATE`.
 **Resolution**, given the existing high bid `H` (may be null):
 
 *Case A — no existing bid.*
-Insert a bid for the new bidder standing at `starting_price`, with their `max_amount`.
-`current_price = starting_price`.
+Insert a bid for the new bidder standing at `starting_price` (or, if `flat`, at
+their own `max_amount`), with their `max_amount`. `current_price` = that same
+standing amount.
 
 *Case B — the new bidder already holds the high bid.*
 Do not insert a visible bid. Raise their existing row's `max_amount`.
-`current_price` unchanged. (This is a bidder increasing their own ceiling.)
+`current_price` unchanged — unless `flat`, in which case the row's `amount`
+and `current_price` both move to the new `max_amount` too. (This is a bidder
+increasing their own ceiling.)
 
 *Case C — new `max_amount` > `H.max_amount`.* The new bidder takes the lead.
 1. Insert a proxy bid for the old holder standing at `H.max_amount`.
-2. Insert the new bidder's bid standing at `min(H.max_amount + increment, max_amount)`.
+2. Insert the new bidder's bid standing at `min(H.max_amount + increment, max_amount)`
+   — or, if `flat`, at their own `max_amount` outright.
 3. `current_price` = that value, `high_bid_id` = the new bid.
 
 *Case D — new `max_amount` <= `H.max_amount`.* The old holder retains the lead.
@@ -273,8 +280,21 @@ Do not insert a visible bid. Raise their existing row's `max_amount`.
 2. Insert a proxy bid for the old holder standing at
    `min(max_amount + increment, H.max_amount)`.
 3. `current_price` = that value, `high_bid_id` = the old holder's proxy bid.
+   `flat` makes no difference here — the bidder didn't take the lead, so
+   there is nothing of theirs to publish; the value that resolves belongs to
+   the old holder's own real ceiling, which a flat bid cannot override.
 
 *Case E — exact tie on maximums.* Earliest `created_at` wins. Falls under case D.
+
+**Flat bids (db/014).** Quick Bid is a proxy bid: `max_amount` is a private
+ceiling, and the engine reveals only as much of it as needed to lead
+(`current_price` rises in small steps, one increment past whoever is second).
+Monster Bid and pre-bidding are not — the whole point of dialing in a big,
+deliberate number is to publish it, not to hide it behind proxy compression.
+Passing `flat = true` makes `current_price` equal the bidder's own
+`max_amount` outright in every case where that bid becomes (or already is)
+the high bid (A, B, C) — never in Case D, where the number that resolves
+isn't this bidder's to reveal in the first place.
 
 **Soft close:**
 
