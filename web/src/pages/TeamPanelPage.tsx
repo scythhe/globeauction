@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import { api, type Auction, type AuctionEvent, type Vehicle, type VehiclePhoto } from "../api.ts";
 import { errorMessage } from "../AuthContext.tsx";
 import { gel } from "../format.ts";
@@ -29,6 +29,37 @@ const labelTextClass = "mb-1 block font-medium text-ink-muted";
 const buttonClass =
   "rounded bg-brand px-4 py-2 text-sm font-semibold text-white shadow-[0_0_16px_-4px_var(--color-brand)] transition hover:bg-brand-hover disabled:opacity-50";
 const sectionClass = "rounded-lg border border-border bg-surface p-5";
+
+// The create-vehicle -> photos -> create-auction flow is a sequence, not
+// three unrelated boxes — a numbered badge + connecting line says that at
+// a glance instead of relying on a "1./2./3." text prefix buried in each
+// heading, which read the same as every other section on this page.
+function Step({
+  number,
+  title,
+  last = false,
+  children,
+}: {
+  number: number;
+  title: string;
+  last?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex gap-4">
+      <div className="flex flex-col items-center">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand font-display text-sm font-bold text-white shadow-[0_0_12px_-2px_var(--color-brand)]">
+          {number}
+        </span>
+        {!last && <span className="mt-1 w-px flex-1 bg-border" />}
+      </div>
+      <div className={`min-w-0 flex-1 ${last ? "" : "pb-6"}`}>
+        <h3 className="font-display mb-3 text-base font-semibold">{title}</h3>
+        {children}
+      </div>
+    </div>
+  );
+}
 
 export function TeamPanelPage() {
   const { t } = useTranslation();
@@ -240,45 +271,46 @@ export function TeamPanelPage() {
       <h1 className="font-display text-3xl font-bold tracking-wide">{t("team.title")}</h1>
 
       <section className={sectionClass}>
-        <h3 className="font-display mb-4 text-lg font-semibold">{t("team.step1Title")}</h3>
-        <form onSubmit={handleCreateVehicle} className="grid grid-cols-1 gap-3 sm:grid-cols-4">
-          <input
-            placeholder={t("team.make")}
-            value={vehicleForm.make}
-            onChange={(e) => setVehicleForm({ ...vehicleForm, make: e.target.value })}
-            required
-            className={inputClass}
-          />
-          <input
-            placeholder={t("team.model")}
-            value={vehicleForm.model}
-            onChange={(e) => setVehicleForm({ ...vehicleForm, model: e.target.value })}
-            required
-            className={inputClass}
-          />
-          <input
-            placeholder={t("team.year")}
-            type="number"
-            value={vehicleForm.year}
-            onChange={(e) => setVehicleForm({ ...vehicleForm, year: e.target.value })}
-            required
-            className={inputClass}
-          />
-          <button type="submit" className={buttonClass}>
-            {t("team.createVehicle")}
-          </button>
-        </form>
-        {vehicleError && <p className="mt-2 text-sm text-brand">{vehicleError}</p>}
-        {vehicleId && (
-          <p className="mt-2 text-xs text-ink-faint">
-            {t("team.vehicleIdLabel")}: <span className="font-mono">{vehicleId}</span>
-          </p>
-        )}
-      </section>
+        <h2 className="font-display mb-5 text-xl font-bold">{t("team.newListingTitle")}</h2>
+
+        <Step number={1} title={t("team.step1Title")}>
+          <form onSubmit={handleCreateVehicle} className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+            <input
+              placeholder={t("team.make")}
+              value={vehicleForm.make}
+              onChange={(e) => setVehicleForm({ ...vehicleForm, make: e.target.value })}
+              required
+              className={inputClass}
+            />
+            <input
+              placeholder={t("team.model")}
+              value={vehicleForm.model}
+              onChange={(e) => setVehicleForm({ ...vehicleForm, model: e.target.value })}
+              required
+              className={inputClass}
+            />
+            <input
+              placeholder={t("team.year")}
+              type="number"
+              value={vehicleForm.year}
+              onChange={(e) => setVehicleForm({ ...vehicleForm, year: e.target.value })}
+              required
+              className={inputClass}
+            />
+            <button type="submit" className={buttonClass}>
+              {t("team.createVehicle")}
+            </button>
+          </form>
+          {vehicleError && <p className="mt-2 text-sm text-brand">{vehicleError}</p>}
+          {vehicleId && (
+            <p className="mt-2 text-xs text-ink-faint">
+              {t("team.vehicleIdLabel")}: <span className="font-mono">{vehicleId}</span>
+            </p>
+          )}
+        </Step>
 
       {vehicleId && (
-        <section className={sectionClass}>
-          <h3 className="font-display mb-4 text-lg font-semibold">{t("team.step1bTitle")}</h3>
+        <Step number={2} title={t("team.step1bTitle")}>
           <div className="mb-3 flex flex-wrap gap-2">
             {photos.map((p, i) => (
               <div key={p.id} className="group relative h-20 w-28 overflow-hidden rounded border border-border">
@@ -323,11 +355,10 @@ export function TeamPanelPage() {
             />
           </label>
           {photoError && <p className="mt-2 text-sm text-brand">{photoError}</p>}
-        </section>
+        </Step>
       )}
 
-      <section className={sectionClass}>
-        <h3 className="font-display mb-4 text-lg font-semibold">{t("team.step2Title")}</h3>
+        <Step number={3} title={t("team.step2Title")} last>
         <form onSubmit={handleCreateAuction} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className={`${labelClass} sm:col-span-2`}>
             <span className={labelTextClass}>{t("team.vehicleIdLabel")}</span>
@@ -431,7 +462,10 @@ export function TeamPanelPage() {
         {auctionCreated && (
           <p className="mt-2 text-sm text-live">{t("team.auctionCreated", { id: auctionCreated })}</p>
         )}
+        </Step>
       </section>
+
+      <h2 className="font-display pt-2 text-xl font-bold text-ink-muted">{t("team.ongoingTitle")}</h2>
 
       <section className={sectionClass}>
         <h3 className="font-display mb-4 text-lg font-semibold">{t("team.manageAuctionsTitle")}</h3>

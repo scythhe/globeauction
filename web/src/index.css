@@ -22,7 +22,15 @@
 
 @layer base {
   body {
+    /* A flat #0b0b0d reads as "unfinished" at this scale — two faint,
+       fixed radial glows (brand red top-left, near-invisible elsewhere)
+       give the page depth without landing on any new color or competing
+       with the hero's own gradient, which stays as the one bright spot. */
     background-color: var(--color-bg);
+    background-image:
+      radial-gradient(ellipse 1200px 600px at 15% -10%, color-mix(in srgb, var(--color-brand) 7%, transparent), transparent),
+      radial-gradient(ellipse 900px 500px at 100% 20%, color-mix(in srgb, var(--color-brand-dim) 10%, transparent), transparent);
+    background-attachment: fixed;
     color: var(--color-ink);
     font-family: var(--font-sans);
   }
@@ -72,5 +80,18 @@
   }
   .animate-win-pop {
     animation: win-pop 420ms ease-out;
+  }
+
+  /* One-shot pop-and-settle for the extended/bonus-time chip — it used to
+     use the generic animate-pulse (a continuous opacity flicker for its
+     whole 4s lifetime), which reads as "still loading" rather than "this
+     just happened." A single entrance beat says the latter. */
+  @keyframes badge-pop {
+    0% { opacity: 0; transform: scale(0.85) translateY(-2px); }
+    50% { opacity: 1; transform: scale(1.05) translateY(0); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
+  }
+  .animate-badge-pop {
+    animation: badge-pop 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 }

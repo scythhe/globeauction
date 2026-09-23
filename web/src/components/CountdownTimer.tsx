@@ -149,8 +149,8 @@ export function CountdownTimer({
       {justExtended && (
         <span
           className={[
-            "animate-pulse whitespace-nowrap rounded bg-brand font-bold uppercase tracking-wider text-white",
-            size === "sm" ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-0.5 text-xs",
+            "animate-badge-pop whitespace-nowrap rounded-full bg-gradient-to-r from-brand to-brand-hover font-bold uppercase tracking-wider text-white shadow-[0_0_10px_-1px_var(--color-brand)]",
+            size === "sm" ? "px-2 py-0.5 text-[10px]" : "px-2.5 py-1 text-xs",
             // On the big detail-page timer this sits inside a
             // justify-between row, so appearing in normal flow shoves the
             // number/ring sideways every time. Take it out of flow there;

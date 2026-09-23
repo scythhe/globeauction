@@ -34,8 +34,10 @@ export function LoginPage({
     <div className="mx-auto max-w-sm">
       <form
         onSubmit={handleSubmit}
-        className="rounded-lg border border-border bg-surface p-6 shadow-xl"
+        className="overflow-hidden rounded-lg border border-brand/25 bg-surface shadow-xl shadow-black/40"
       >
+        <div className="h-1 bg-gradient-to-r from-brand via-brand-hover to-brand" />
+        <div className="p-6">
         <h2 className="font-display mb-6 text-2xl font-bold tracking-wide">{t("login.title")}</h2>
         <label className="mb-4 block text-sm">
           <span className="mb-1 block font-medium text-ink-muted">{t("login.email")}</span>
@@ -71,6 +73,7 @@ export function LoginPage({
             {t("login.registerLink")}
           </button>
         </p>
+        </div>
       </form>
     </div>
   );

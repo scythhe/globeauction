@@ -71,7 +71,17 @@ export function AuctionListPage({ onSelect }: { onSelect: (auctionId: string) =>
               key={auction.id}
               type="button"
               onClick={() => onSelect(auction.id)}
-              className="group overflow-hidden rounded-lg border border-border bg-surface text-left shadow-lg transition hover:-translate-y-0.5 hover:border-brand/60 hover:shadow-brand/10"
+              className={[
+                "group overflow-hidden rounded-lg border bg-surface text-left shadow-lg transition hover:-translate-y-0.5 hover:border-brand/60 hover:shadow-brand/10",
+                // Live cards are the only ones a visitor can still act on
+                // — a faint green tint on the border/shadow marks that at
+                // a glance, instead of every card (live, sold, cancelled)
+                // sharing identical chrome and leaving the status badge
+                // as the only signal.
+                auction.status === "live"
+                  ? "border-live/30 shadow-live/5"
+                  : "border-border",
+              ].join(" ")}
             >
               <div className="relative aspect-video w-full overflow-hidden bg-gradient-to-br from-surface-hover to-black">
                 {photo ? (
@@ -111,7 +121,7 @@ export function AuctionListPage({ onSelect }: { onSelect: (auctionId: string) =>
                 <h3 className="font-display truncate text-lg font-semibold text-ink">
                   {vehicle ? `${vehicle.year} ${vehicle.make} ${vehicle.model}` : t("list.vehicleFallback")}
                 </h3>
-                <div className="mt-2 flex items-baseline justify-between">
+                <div className="mt-3 flex items-baseline justify-between border-t border-border pt-3">
                   <span className="text-xs uppercase tracking-wide text-ink-muted">{t("list.currentBid")}</span>
                   <div className="text-right">
                     <div className="text-xl font-bold text-brand">

@@ -225,7 +225,7 @@ export function AuctionDetailPage({
             <h1 className="font-display text-2xl font-bold">
               {vehicle.year} {vehicle.make} {vehicle.model}
             </h1>
-            <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+            <dl className="mt-4 grid grid-cols-2 gap-2 text-sm sm:grid-cols-3">
               {vehicle.body_style && <Spec label={t("spec.bodyStyle")} value={vehicle.body_style} />}
               {vehicle.color && <Spec label={t("spec.color")} value={vehicle.color} />}
               {vehicle.mileage !== null && (
@@ -285,9 +285,15 @@ export function AuctionDetailPage({
 
         </div>
 
-        {/* Bid panel */}
+        {/* Bid panel — the one box on this page where money actually
+            changes hands, so it gets a visual identity the plain
+            info/spec panels deliberately don't: a brand-tinted border and
+            a top accent bar, instead of the same border-border/bg-surface
+            treatment used everywhere else. */}
         <div className="lg:col-span-2">
-          <div className="sticky top-20 rounded-lg border border-border bg-surface p-5 shadow-xl">
+          <div className="sticky top-20 overflow-hidden rounded-lg border border-brand/25 bg-surface shadow-xl shadow-black/40">
+            <div className="h-1 bg-gradient-to-r from-brand via-brand-hover to-brand" />
+            <div className="p-5">
             <div className="mb-3 flex items-center justify-between">
               <StatusBadge status={auction.status} />
               <CountdownTimer
@@ -464,6 +470,7 @@ export function AuctionDetailPage({
             {isLive && !user && (
               <p className="mt-2 text-sm italic text-ink-muted">{t("detail.logInToBid")}</p>
             )}
+            </div>
           </div>
         </div>
       </div>
@@ -473,12 +480,15 @@ export function AuctionDetailPage({
 
 function Spec({ label, value, icon }: { label: string; value: string; icon?: ReactNode }) {
   return (
-    <div>
-      <dt className="flex items-center gap-1 text-xs uppercase tracking-wide text-ink-faint">
+    // A small bordered chip instead of bare stacked text — the spec list
+    // was the flattest part of this page, label/value pairs floating with
+    // nothing to scan against, no different from a plain paragraph.
+    <div className="rounded border border-border/60 bg-surface/50 px-3 py-2">
+      <dt className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-ink-faint">
         {icon}
         {label}
       </dt>
-      <dd className="font-medium text-ink">{value}</dd>
+      <dd className="mt-0.5 truncate font-medium text-ink">{value}</dd>
     </div>
   );
 }
