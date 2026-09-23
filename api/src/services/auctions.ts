@@ -2,6 +2,7 @@ import type { Pool } from "pg";
 import * as auctionsRepo from "../repositories/auctions.ts";
 import * as vehiclesRepo from "../repositories/vehicles.ts";
 import * as auctionEventsRepo from "../repositories/auctionEvents.ts";
+import * as vehiclePhotosRepo from "../repositories/vehiclePhotos.ts";
 import { ApiError, Errors } from "../errors.ts";
 import type { Actor } from "../types.ts";
 
@@ -51,6 +52,16 @@ export async function create(pool: Pool, actor: Actor | null, input: CreateAucti
   if (!vehicle) throw Errors.notFound("vehicle");
   if (vehicle.status !== "approved") {
     throw new ApiError(400, "vehicle_not_approved");
+  }
+
+  // A lot with zero photos going live isn't a real listing — a bidder
+  // can't evaluate a car they can't see. Minimum of 1, checked here
+  // rather than at vehicle-approval time, since a vehicle can sit
+  // 'approved' for a while before an auction is actually created for it,
+  // and photos can still be added/removed right up to that point.
+  const photoCount = await vehiclePhotosRepo.count(pool, input.vehicleId);
+  if (photoCount < 1) {
+    throw new ApiError(400, "vehicle_has_no_photos");
   }
 
   // Same class of bug as bidding.ts and admin.ts: NaN/Infinity pass a

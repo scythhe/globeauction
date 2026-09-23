@@ -63,6 +63,62 @@ export async function insertIfUnderCap(
   }
 }
 
+// "Primary photo" isn't a separate flag — it's just whichever photo holds
+// sort_order 0, the same ordering the list page's `photos[0]` (and this
+// table's own index) already treat as first. A second is_primary column
+// would just be the same fact stored twice, with no test forcing the two
+// to agree. Same advisory-lock pattern as insertIfUnderCap so this can't
+// race a concurrent upload/delete on the same vehicle.
+export async function setPrimary(
+  pool: Pool,
+  vehicleId: string,
+  photoId: string,
+): Promise<VehiclePhoto | null> {
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    await client.query("select pg_advisory_xact_lock(hashtext($1))", [vehicleId]);
+
+    const { rows: targetRows } = await client.query<VehiclePhoto>(
+      "select * from vehicle_photos where id = $1 and vehicle_id = $2 for update",
+      [photoId, vehicleId],
+    );
+    const target = targetRows[0];
+    if (!target) {
+      await client.query("rollback");
+      return null;
+    }
+
+    const { rows: firstRows } = await client.query<VehiclePhoto>(
+      "select * from vehicle_photos where vehicle_id = $1 order by sort_order asc limit 1 for update",
+      [vehicleId],
+    );
+    const current = firstRows[0]!;
+
+    if (current.id === target.id) {
+      await client.query("commit");
+      return target;
+    }
+
+    await client.query("update vehicle_photos set sort_order = $1 where id = $2", [
+      current.sort_order,
+      target.id,
+    ]);
+    await client.query("update vehicle_photos set sort_order = $1 where id = $2", [
+      target.sort_order,
+      current.id,
+    ]);
+
+    await client.query("commit");
+    return { ...target, sort_order: current.sort_order };
+  } catch (err) {
+    await client.query("rollback");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 export async function listByVehicle(pool: Pool, vehicleId: string): Promise<VehiclePhoto[]> {
   const { rows } = await pool.query<VehiclePhoto>(
     "select * from vehicle_photos where vehicle_id = $1 order by sort_order asc",

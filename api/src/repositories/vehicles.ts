@@ -60,3 +60,23 @@ export async function findById(pool: Pool, id: string): Promise<Vehicle | null> 
   const { rows } = await pool.query<Vehicle>("select * from vehicles where id = $1", [id]);
   return rows[0] ?? null;
 }
+
+// Vehicles a new auction could actually be created for right now: approved,
+// and not already carrying an open auction — the same status set
+// `auctions_one_open_per_vehicle` (db/001_init.sql) enforces, mirrored here
+// so the team panel's picker only ever offers something auctions.create()
+// would accept, instead of a free-text vehicle ID a team member has to get
+// right by memory or copy-paste.
+export async function listAvailableForAuction(pool: Pool): Promise<Vehicle[]> {
+  const { rows } = await pool.query<Vehicle>(
+    `select v.* from vehicles v
+      where v.status = 'approved'
+        and not exists (
+          select 1 from auctions a
+           where a.vehicle_id = v.id
+             and a.status in ('scheduled', 'live', 'pending_seller', 'counter_offered')
+        )
+      order by v.created_at desc`,
+  );
+  return rows;
+}

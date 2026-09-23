@@ -315,3 +315,78 @@ describe("photos.deletePhoto", () => {
     );
   });
 });
+
+// "Primary photo" is just whichever row holds sort_order 0 — no separate
+// column. setPrimary() swaps sort_order between the target and whatever
+// currently holds 0, so the list page's already-existing photos[0] display
+// (and every other consumer of listByVehicle's ordering) picks it up for
+// free with no schema change.
+describe("photos.setPrimary", () => {
+  async function threePhotos(vehicleId: string) {
+    const ids: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const { rows } = await client.query(
+        "insert into vehicle_photos (vehicle_id, url, sort_order) values ($1, $2, $3) returning id",
+        [vehicleId, `http://example.com/${i}.jpg`, i],
+      );
+      ids.push(rows[0].id);
+    }
+    return ids;
+  }
+
+  test("promoting the third photo swaps it into sort_order 0", async () => {
+    const team = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, team.id);
+    const [first, , third] = await threePhotos(vehicle.id);
+
+    await photosService.setPrimary(pool, actorFor(team.id), vehicle.id, third!);
+
+    const list = await photosService.listPhotos(pool, vehicle.id);
+    assert.equal(list[0]!.id, third);
+    // the swap, not a shift: the photo that used to be first now sits
+    // wherever third used to be, nothing else moves.
+    assert.equal(list.find((p) => p.id === first)!.sort_order, 2);
+  });
+
+  test("promoting the photo that's already primary is a no-op", async () => {
+    const team = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, team.id);
+    const [first] = await threePhotos(vehicle.id);
+
+    const result = await photosService.setPrimary(pool, actorFor(team.id), vehicle.id, first!);
+    assert.equal(result.sort_order, 0);
+
+    const list = await photosService.listPhotos(pool, vehicle.id);
+    assert.deepEqual(list.map((p) => p.sort_order), [0, 1, 2]);
+  });
+
+  test("rejects a non-team actor", async () => {
+    const team = await createUser(client, { role: "team" });
+    const buyer = await createUser(client, { role: "buyer" });
+    const vehicle = await createVehicle(client, team.id);
+    const [, second] = await threePhotos(vehicle.id);
+
+    await assert.rejects(
+      () => photosService.setPrimary(pool, actorFor(buyer.id, "buyer"), vehicle.id, second!),
+      (err: unknown) => {
+        assert.equal((err as ApiError).code, "forbidden");
+        return true;
+      },
+    );
+  });
+
+  test("rejects a photo that belongs to a different vehicle", async () => {
+    const team = await createUser(client, { role: "team" });
+    const vehicleA = await createVehicle(client, team.id);
+    const vehicleB = await createVehicle(client, team.id);
+    const [, second] = await threePhotos(vehicleA.id);
+
+    await assert.rejects(
+      () => photosService.setPrimary(pool, actorFor(team.id), vehicleB.id, second!),
+      (err: unknown) => {
+        assert.equal((err as ApiError).status, 404);
+        return true;
+      },
+    );
+  });
+});

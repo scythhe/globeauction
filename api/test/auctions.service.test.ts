@@ -8,6 +8,7 @@ import {
   createAuction,
   createUser,
   createVehicle,
+  createVehiclePhoto,
   placeBid,
   reset,
   setAuctionStatus,
@@ -40,6 +41,7 @@ describe("auctions.create", () => {
   test("team can create an auction on an approved vehicle", async () => {
     const team = await createUser(client, { role: "team" });
     const vehicle = await createVehicle(client, team.id, { status: "approved" });
+    await createVehiclePhoto(client, vehicle.id);
     const auction = await auctionsService.create(pool, actorFor(team.id), {
       vehicleId: vehicle.id,
       startingPrice: 1000,
@@ -88,9 +90,29 @@ describe("auctions.create", () => {
     );
   });
 
+  test("rejects a vehicle with no photos", async () => {
+    const team = await createUser(client, { role: "team" });
+    const vehicle = await createVehicle(client, team.id, { status: "approved" });
+    await assert.rejects(
+      () =>
+        auctionsService.create(pool, actorFor(team.id), {
+          vehicleId: vehicle.id,
+          startingPrice: 1000,
+          reservePrice: 1000,
+          startsAt: new Date().toISOString(),
+          endsAt: new Date(Date.now() + 3_600_000).toISOString(),
+        }),
+      (err: unknown) => {
+        assert.equal((err as ApiError).code, "vehicle_has_no_photos");
+        return true;
+      },
+    );
+  });
+
   test("rejects a reserve below the starting price (§1's phase-1 safety rule)", async () => {
     const team = await createUser(client, { role: "team" });
     const vehicle = await createVehicle(client, team.id, { status: "approved" });
+    await createVehiclePhoto(client, vehicle.id);
     await assert.rejects(
       () =>
         auctionsService.create(pool, actorFor(team.id), {
@@ -114,6 +136,7 @@ describe("auctions.create", () => {
     test(`rejects startingPrice=${badPrice}`, async () => {
       const team = await createUser(client, { role: "team" });
       const vehicle = await createVehicle(client, team.id, { status: "approved" });
+      await createVehiclePhoto(client, vehicle.id);
       await assert.rejects(
         () =>
           auctionsService.create(pool, actorFor(team.id), {
@@ -134,6 +157,7 @@ describe("auctions.create", () => {
   test("rejects an end time before the start time", async () => {
     const team = await createUser(client, { role: "team" });
     const vehicle = await createVehicle(client, team.id, { status: "approved" });
+    await createVehiclePhoto(client, vehicle.id);
     await assert.rejects(
       () =>
         auctionsService.create(pool, actorFor(team.id), {
@@ -153,6 +177,7 @@ describe("auctions.create", () => {
   test("accepts a buy-now price at or above the reserve", async () => {
     const team = await createUser(client, { role: "team" });
     const vehicle = await createVehicle(client, team.id, { status: "approved" });
+    await createVehiclePhoto(client, vehicle.id);
     const auction = await auctionsService.create(pool, actorFor(team.id), {
       vehicleId: vehicle.id,
       startingPrice: 1000,
@@ -167,6 +192,7 @@ describe("auctions.create", () => {
   test("rejects a buy-now price below the reserve", async () => {
     const team = await createUser(client, { role: "team" });
     const vehicle = await createVehicle(client, team.id, { status: "approved" });
+    await createVehiclePhoto(client, vehicle.id);
     await assert.rejects(
       () =>
         auctionsService.create(pool, actorFor(team.id), {

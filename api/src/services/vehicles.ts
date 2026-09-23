@@ -57,3 +57,11 @@ export async function getById(pool: Pool, id: string) {
   if (!vehicle) throw Errors.notFound("vehicle");
   return vehicle;
 }
+
+// Team-only: feeds the "which vehicle is this auction for" picker in the
+// team panel, so it's a real selection instead of a free-text vehicle ID.
+export async function listAvailableForAuction(pool: Pool, actor: Actor | null) {
+  if (!actor) throw Errors.unauthenticated();
+  if (actor.role !== "team") throw Errors.forbidden();
+  return vehiclesRepo.listAvailableForAuction(pool);
+}

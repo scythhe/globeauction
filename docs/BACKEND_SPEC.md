@@ -501,6 +501,19 @@ Limits: 40 photos per vehicle, 10 MB each, jpeg/png/webp only. Validate the
 content type when issuing the presigned URL, not after. These limits are
 enforced in the API — the schema only stores `url` and `sort_order` per photo.
 
+Minimum: 1. `POST /auctions` rejects with `vehicle_has_no_photos` if the
+vehicle has zero photos at the moment the auction is created — a bidder
+can't evaluate a car they can't see, and phase 1 has no photo requirement
+at vehicle-approval time (a vehicle can sit `approved` for a while, with
+photos still being added right up until the auction is actually created).
+
+There's no separate "primary photo" column. Whichever photo holds
+`sort_order = 0` is the cover shot — the same ordering the list page's
+first-photo display already used, so a second `is_primary` flag would just
+be the same fact stored twice. `POST /vehicles/:id/photos/:photoId/primary`
+(team-only) reorders by swapping that photo's `sort_order` with whichever
+currently holds 0.
+
 **Implemented.** Content type is checked before a URL is ever handed out —
 the presigned PUT is signed with that content type, so uploading with a
 different header fails the signature at the storage layer, not just a
@@ -535,9 +548,11 @@ GET    /auth/me
 ```
 POST   /vehicles                    team only — creates directly in 'approved'
 GET    /vehicles/:id                public
+GET    /vehicles/available          team only — approved vehicles with no open auction, for the team panel's auction-creation picker
 POST   /vehicles/:id/photos         team only — get a presigned upload URL (§11)
 POST   /vehicles/:id/photos/confirm team only — confirm an upload, insert the vehicle_photos row
 GET    /vehicles/:id/photos         public — list a vehicle's photos
+POST   /vehicles/:id/photos/:photoId/primary  team only — make this photo sort_order 0 (§11)
 DELETE /vehicles/:id/photos/:photoId  team only
 ```
 

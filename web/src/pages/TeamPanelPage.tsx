@@ -1,8 +1,9 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
-import { api, type Vehicle, type VehiclePhoto } from "../api.ts";
+import { api, type Auction, type AuctionEvent, type Vehicle, type VehiclePhoto } from "../api.ts";
 import { errorMessage } from "../AuthContext.tsx";
 import { gel } from "../format.ts";
 import { useTranslation } from "../i18n/index.tsx";
+import { StatusBadge } from "../components/StatusBadge.tsx";
 
 interface TeamUser {
   id: string;
@@ -52,6 +53,17 @@ export function TeamPanelPage() {
 
   const [users, setUsers] = useState<TeamUser[] | null>(null);
   const [usersError, setUsersError] = useState<string | null>(null);
+  const [depositInputs, setDepositInputs] = useState<Record<string, string>>({});
+
+  const [availableVehicles, setAvailableVehicles] = useState<Vehicle[] | null>(null);
+
+  async function loadAvailableVehicles() {
+    try {
+      setAvailableVehicles(await api.get<Vehicle[]>("/vehicles/available"));
+    } catch {
+      setAvailableVehicles([]);
+    }
+  }
 
   async function loadUsers() {
     try {
@@ -62,9 +74,66 @@ export function TeamPanelPage() {
     }
   }
 
+  interface ManagedAuction {
+    auction: Auction;
+    vehicle: Vehicle | null;
+  }
+  const [managedAuctions, setManagedAuctions] = useState<ManagedAuction[] | null>(null);
+  const [managedError, setManagedError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [reassignInputs, setReassignInputs] = useState<Record<string, string>>({});
+  const [openHistory, setOpenHistory] = useState<string | null>(null);
+  const [history, setHistory] = useState<Record<string, AuctionEvent[]>>({});
+
+  async function loadManagedAuctions() {
+    try {
+      const auctions = await api.get<Auction[]>("/auctions");
+      const withVehicles = await Promise.all(
+        auctions.map(async (auction) => {
+          try {
+            return { auction, vehicle: await api.get<Vehicle>(`/vehicles/${auction.vehicle_id}`) };
+          } catch {
+            return { auction, vehicle: null };
+          }
+        }),
+      );
+      setManagedAuctions(withVehicles);
+    } catch (err) {
+      setManagedError(errorMessage(err));
+    }
+  }
+
   useEffect(() => {
     loadUsers();
+    loadManagedAuctions();
+    loadAvailableVehicles();
   }, []);
+
+  async function runAuctionAction(action: () => Promise<unknown>) {
+    setActionError(null);
+    try {
+      await action();
+      await loadManagedAuctions();
+    } catch (err) {
+      setActionError(errorMessage(err));
+    }
+  }
+
+  async function toggleHistory(auctionId: string) {
+    if (openHistory === auctionId) {
+      setOpenHistory(null);
+      return;
+    }
+    setOpenHistory(auctionId);
+    if (!history[auctionId]) {
+      try {
+        const events = await api.get<AuctionEvent[]>(`/auctions/${auctionId}/events`);
+        setHistory((h) => ({ ...h, [auctionId]: events }));
+      } catch (err) {
+        setActionError(errorMessage(err));
+      }
+    }
+  }
 
   async function loadPhotos(id: string) {
     try {
@@ -86,6 +155,7 @@ export function TeamPanelPage() {
       setVehicleId(vehicle.id);
       setVehicleForm({ make: "", model: "", year: "" });
       setPhotos([]);
+      await loadAvailableVehicles();
     } catch (err) {
       setVehicleError(errorMessage(err));
     }
@@ -133,14 +203,23 @@ export function TeamPanelPage() {
         endsAt: new Date(auctionForm.endsAt).toISOString(),
       });
       setAuctionCreated(auction.id);
+      setVehicleId("");
+      setPhotos([]);
+      await Promise.all([loadManagedAuctions(), loadAvailableVehicles()]);
     } catch (err) {
       setAuctionError(errorMessage(err));
     }
   }
 
   async function handleDeposit(userId: string) {
+    const amount = Number(depositInputs[userId]);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setUsersError(t("team.enterValidDeposit"));
+      return;
+    }
     try {
-      await api.post(`/admin/users/${userId}/deposit`, { amount: 500 });
+      await api.post(`/admin/users/${userId}/deposit`, { amount });
+      setDepositInputs((d) => ({ ...d, [userId]: "" }));
       await loadUsers();
     } catch (err) {
       setUsersError(errorMessage(err));
@@ -201,9 +280,25 @@ export function TeamPanelPage() {
         <section className={sectionClass}>
           <h3 className="font-display mb-4 text-lg font-semibold">{t("team.step1bTitle")}</h3>
           <div className="mb-3 flex flex-wrap gap-2">
-            {photos.map((p) => (
+            {photos.map((p, i) => (
               <div key={p.id} className="group relative h-20 w-28 overflow-hidden rounded border border-border">
                 <img src={p.url} alt="" className="h-full w-full object-cover" />
+                {i === 0 ? (
+                  <span className="absolute bottom-0 left-0 rounded-tr bg-brand px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">
+                    {t("team.coverPhoto")}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await api.post(`/vehicles/${vehicleId}/photos/${p.id}/primary`);
+                      await loadPhotos(vehicleId);
+                    }}
+                    className="absolute bottom-0 left-0 rounded-tr bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white opacity-0 transition group-hover:opacity-100"
+                  >
+                    {t("team.makeCoverPhoto")}
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={async () => {
@@ -236,13 +331,36 @@ export function TeamPanelPage() {
         <form onSubmit={handleCreateAuction} className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <label className={`${labelClass} sm:col-span-2`}>
             <span className={labelTextClass}>{t("team.vehicleIdLabel")}</span>
-            <input
+            <select
               value={vehicleId}
-              onChange={(e) => setVehicleId(e.target.value)}
-              placeholder={t("team.vehicleIdPlaceholder")}
+              onChange={(e) => {
+                const id = e.target.value;
+                setVehicleId(id);
+                if (id) loadPhotos(id);
+                else setPhotos([]);
+              }}
               required
               className={inputClass}
-            />
+            >
+              <option value="" disabled>
+                {t("team.vehiclePickerPlaceholder")}
+              </option>
+              {vehicleId && !availableVehicles?.some((v) => v.id === vehicleId) && (
+                // The vehicle just created in step 1 hasn't round-tripped
+                // through /vehicles/available yet in this render — keep it
+                // selectable so the happy path (create → pick it) doesn't
+                // silently lose the selection while that request is in flight.
+                <option value={vehicleId}>{t("team.vehicleJustCreated")}</option>
+              )}
+              {availableVehicles?.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.year} {v.make} {v.model}
+                </option>
+              ))}
+            </select>
+            {availableVehicles?.length === 0 && !vehicleId && (
+              <p className="mt-1 text-xs text-ink-faint">{t("team.noVehiclesAvailable")}</p>
+            )}
           </label>
           <label className={labelClass}>
             <span className={labelTextClass}>{t("team.startingPrice")}</span>
@@ -316,6 +434,148 @@ export function TeamPanelPage() {
       </section>
 
       <section className={sectionClass}>
+        <h3 className="font-display mb-4 text-lg font-semibold">{t("team.manageAuctionsTitle")}</h3>
+        {managedError && <p className="text-sm text-brand">{managedError}</p>}
+        {actionError && <p className="mb-2 text-sm text-brand">{actionError}</p>}
+        {!managedAuctions ? (
+          <p className="text-sm text-ink-muted">{t("common.loading")}</p>
+        ) : managedAuctions.length === 0 ? (
+          <p className="text-sm text-ink-muted">{t("team.noAuctionsYet")}</p>
+        ) : (
+          <div className="space-y-2">
+            {managedAuctions.map(({ auction, vehicle }) => (
+              <div key={auction.id} className="rounded border border-border p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">
+                      {vehicle ? `${vehicle.year} ${vehicle.make} ${vehicle.model}` : auction.vehicle_id}
+                    </span>
+                    <StatusBadge status={auction.status} />
+                  </div>
+                  <div className="flex items-center gap-3 text-sm text-ink-muted">
+                    <span>{gel(auction.current_price)}</span>
+                    {auction.reserve_price && (
+                      <span
+                        className={
+                          Number(auction.current_price) >= Number(auction.reserve_price)
+                            ? "text-live"
+                            : "text-warn"
+                        }
+                      >
+                        {Number(auction.current_price) >= Number(auction.reserve_price)
+                          ? t("team.reserveMet")
+                          : t("team.reserveNotMet")}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {auction.status === "live" && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          confirm(t("team.confirmCancel")) &&
+                          runAuctionAction(() => api.post(`/auctions/${auction.id}/cancel`))
+                        }
+                        className="rounded border border-border px-3 py-1 text-xs font-medium hover:border-brand"
+                      >
+                        {t("team.actionCancel")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          confirm(t("team.confirmVoidLastBid")) &&
+                          runAuctionAction(() => api.post(`/auctions/${auction.id}/void-last-bid`))
+                        }
+                        className="rounded border border-border px-3 py-1 text-xs font-medium hover:border-brand"
+                      >
+                        {t("team.actionVoidLastBid")}
+                      </button>
+                    </>
+                  )}
+                  {auction.status === "pending_seller" && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          runAuctionAction(() => api.post(`/auctions/${auction.id}/accept`))
+                        }
+                        className="rounded bg-brand px-3 py-1 text-xs font-semibold text-white hover:bg-brand-hover"
+                      >
+                        {t("team.actionAccept")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          confirm(t("team.confirmDecline")) &&
+                          runAuctionAction(() => api.post(`/auctions/${auction.id}/decline`))
+                        }
+                        className="rounded border border-border px-3 py-1 text-xs font-medium hover:border-brand"
+                      >
+                        {t("team.actionDecline")}
+                      </button>
+                    </>
+                  )}
+                  {auction.status === "sold" && (
+                    <span className="inline-flex items-center gap-1.5">
+                      <input
+                        placeholder={t("team.reassignPlaceholder")}
+                        value={reassignInputs[auction.id] ?? ""}
+                        onChange={(e) =>
+                          setReassignInputs((r) => ({ ...r, [auction.id]: e.target.value }))
+                        }
+                        className="w-64 rounded border border-border bg-bg px-2 py-1 text-xs text-ink outline-none focus:border-brand"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const soldTo = reassignInputs[auction.id]?.trim();
+                          if (!soldTo) return;
+                          runAuctionAction(() =>
+                            api.post(`/admin/auctions/${auction.id}/reassign-sale`, { soldTo }),
+                          );
+                        }}
+                        className="rounded border border-border px-3 py-1 text-xs font-medium hover:border-brand"
+                      >
+                        {t("team.actionReassign")}
+                      </button>
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => toggleHistory(auction.id)}
+                    className="ml-auto text-xs font-medium text-ink-faint underline decoration-dotted hover:text-ink-muted"
+                  >
+                    {openHistory === auction.id ? t("team.actionHideHistory") : t("team.actionViewHistory")}
+                  </button>
+                </div>
+
+                {openHistory === auction.id && (
+                  <div className="mt-2 border-t border-border pt-2 text-xs text-ink-muted">
+                    {!history[auction.id] ? (
+                      <p>{t("common.loading")}</p>
+                    ) : history[auction.id]!.length === 0 ? (
+                      <p>{t("team.historyEmpty")}</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {history[auction.id]!.map((e) => (
+                          <li key={e.id}>
+                            {new Date(e.occurred_at).toLocaleString()} — {t(`team.event.${e.event_type}`)}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className={sectionClass}>
         <h3 className="font-display mb-4 text-lg font-semibold">{t("team.buyersAwaitingVetting")}</h3>
         {usersError && <p className="text-sm text-brand">{usersError}</p>}
         {!users ? (
@@ -344,13 +604,26 @@ export function TeamPanelPage() {
                   </td>
                   <td className="py-2 text-right">
                     {!u.depositReceivedAt && (
-                      <button
-                        type="button"
-                        onClick={() => handleDeposit(u.id)}
-                        className="rounded border border-border px-3 py-1 text-xs font-medium hover:border-brand"
-                      >
-                        {t("team.recordDeposit")}
-                      </button>
+                      <span className="inline-flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder={t("team.depositAmountPlaceholder")}
+                          value={depositInputs[u.id] ?? ""}
+                          onChange={(e) =>
+                            setDepositInputs((d) => ({ ...d, [u.id]: e.target.value }))
+                          }
+                          className="w-24 rounded border border-border bg-bg px-2 py-1 text-xs text-ink outline-none focus:border-brand"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleDeposit(u.id)}
+                          className="rounded border border-border px-3 py-1 text-xs font-medium hover:border-brand"
+                        >
+                          {t("team.recordDeposit")}
+                        </button>
+                      </span>
                     )}
                     {u.depositReceivedAt && (
                       <button

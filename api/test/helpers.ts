@@ -89,6 +89,16 @@ export async function createVehicle(
   return rows[0];
 }
 
+export async function createVehiclePhoto(client: Client, vehicleId: string): Promise<{ id: string }> {
+  const { rows } = await client.query(
+    `insert into vehicle_photos (vehicle_id, url, sort_order)
+     values ($1, 'https://example.test/photo.jpg', coalesce((select max(sort_order) + 1 from vehicle_photos where vehicle_id = $1), 0))
+     returning id`,
+    [vehicleId],
+  );
+  return rows[0];
+}
+
 interface AuctionFixture {
   id: string;
 }

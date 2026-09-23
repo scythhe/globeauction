@@ -129,6 +129,15 @@ export interface VehiclePhoto {
   sort_order: number;
 }
 
+export interface AuctionEvent {
+  id: string;
+  auction_id: string;
+  event_type: "cancelled" | "reassigned";
+  actor_id: string;
+  occurred_at: string;
+  detail: Record<string, unknown>;
+}
+
 export interface Bid {
   id: string;
   auction_id: string;

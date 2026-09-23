@@ -111,6 +111,19 @@ export async function listPhotos(pool: Pool, vehicleId: string) {
   return photosRepo.listByVehicle(pool, vehicleId);
 }
 
+export async function setPrimary(
+  pool: Pool,
+  actor: Actor | null,
+  vehicleId: string,
+  photoId: string,
+) {
+  requireTeam(actor);
+
+  const photo = await photosRepo.setPrimary(pool, vehicleId, photoId);
+  if (!photo) throw Errors.notFound("photo");
+  return photo;
+}
+
 export async function deletePhoto(
   pool: Pool,
   actor: Actor | null,

@@ -15,6 +15,15 @@ export function vehiclesRouter(pool: Pool): Router {
     res.status(201).json(vehicle);
   });
 
+  // Team-only: vehicles a new auction could actually be created for right
+  // now (approved, no open auction already). Registered before GET /:id
+  // isn't necessary (different path shapes), but keep it near the other
+  // vehicle-creation-flow routes since it exists to serve that flow.
+  router.get("/available", async (req, res) => {
+    const vehicles = await vehiclesService.listAvailableForAuction(pool, req.actor);
+    res.json(vehicles);
+  });
+
   router.get("/:id", requireUuidParams("id"), async (req, res) => {
     const vehicle = await vehiclesService.getById(pool, uuidParam(req, "id"));
     res.json(vehicle);
@@ -49,6 +58,16 @@ export function vehiclesRouter(pool: Pool): Router {
   router.get("/:id/photos", requireUuidParams("id"), async (req, res) => {
     const photos = await photosService.listPhotos(pool, uuidParam(req, "id"));
     res.json(photos);
+  });
+
+  router.post("/:id/photos/:photoId/primary", requireUuidParams("id", "photoId"), async (req, res) => {
+    const photo = await photosService.setPrimary(
+      pool,
+      req.actor,
+      uuidParam(req, "id"),
+      uuidParam(req, "photoId"),
+    );
+    res.json(photo);
   });
 
   router.delete("/:id/photos/:photoId", requireUuidParams("id", "photoId"), async (req, res) => {
